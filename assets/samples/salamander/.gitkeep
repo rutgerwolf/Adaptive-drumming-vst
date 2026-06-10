@@ -1,0 +1,11 @@
+# Place Salamander Drumkit WAV samples here.
+# Download: https://archive.org/details/SalamanderDrumkit
+# Licence: CC BY 3.0 — Alexander Holm
+#
+# Expected layout:
+#   kick/    kick-v*.wav
+#   snare/   snare-v*.wav
+#   hihat/   hihat-closed-v*.wav  hihat-open-v*.wav
+#   crash/   crash-v*.wav
+#   ride/    ride-v*.wav
+#   tom/     tom-hi-v*.wav  tom-mid-v*.wav  tom-lo-v*.wav
