@@ -15,6 +15,7 @@ own tempo when used as a standalone application.
 |---|---|
 | Styles | Rock, Jazz, Electronic |
 | Pattern densities | Sparse, Medium, Full |
+| Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
 | Adaptive density | **Follow** mode maps the energy of a guide track (sidechain input) to density |
 | BPM sync | Reads host transport; falls back to own BPM parameter |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
@@ -32,6 +33,7 @@ own tempo when used as a standalone application.
 │  Style   [ Rock ]  [ Jazz ]  [ Electronic ]         │
 │  Density [ Sparse ] [ Medium ] [ Full ]             │
 │  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
+│  Sound   [ Synth ] [ Samples ]                      │
 ├─────────────────────────────────────────────────────┤
 │  BPM  120.0  (synced to host)                       │
 │                                                     │
@@ -40,13 +42,14 @@ own tempo when used as a standalone application.
 │  Samples: kick/ snare/ hihat/ crash/ ride/ tom/     │
 │  [Load samples...]                                  │
 └─────────────────────────────────────────────────────┘
-         420 × 340 px
+         420 × 384 px
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
 - **Density row** — radio buttons (group 2); controls how many hits are placed per bar. Disabled while **Follow** is on (density is then automatic).
 - **Follow toggle** — when on, the density tracks the guide-track energy on the sidechain input instead of the manual density buttons.
 - **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
+- **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM display** — read-only label, refreshed at 10 Hz from the processor. Shows host BPM when a DAW transport is active.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
 - **Load samples…** — opens a folder chooser; expects the Salamander layout described below.
@@ -62,8 +65,24 @@ own tempo when used as a standalone application.
 | `bpm` | Float | 40–240 (step 0.1) | 120 | Fallback BPM (ignored when host provides one) |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
 | `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
+| `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
 
 All parameters are automatable and saved with the DAW session.
+
+---
+
+## Sound sources
+
+The drummer can play through one of two engines, switched with the **Sound**
+buttons (the `source` parameter):
+
+- **Synth** *(default)* — built-in procedural drum voices (kick, snare, hi-hat,
+  crash, ride, tom). Needs no sample files, so the plugin makes sound the moment
+  it loads — nothing to download.
+- **Samples** — plays the Salamander Drumkit WAVs (see [Samples](#samples)). Use
+  this for the realistic acoustic kit; load a folder once and it is remembered.
+
+Style, density and Follow behave the same in both modes.
 
 ---
 
