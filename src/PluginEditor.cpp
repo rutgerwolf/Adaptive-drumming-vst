@@ -13,7 +13,7 @@ static const juce::Colour kAccent { 0xff6c9bd1 };
 AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     : AudioProcessorEditor (&p), proc (p)
 {
-    setSize (420, 340);
+    setSize (420, 384);
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -60,6 +60,22 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     addAndMakeVisible (followButton);
     followAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
         proc.apvts, "follow", followButton);
+
+    // ── Sound source buttons (Synth / Samples) ───────────────────────────────
+    for (auto* btn : { &sourceSynthButton, &sourceSamplesButton })
+    {
+        btn->setRadioGroupId (3);
+        btn->setClickingTogglesState (true);
+        btn->setColour (juce::TextButton::buttonColourId,   kPanel);
+        btn->setColour (juce::TextButton::buttonOnColourId, kActive);
+        btn->setColour (juce::TextButton::textColourOffId,  kMuted);
+        btn->setColour (juce::TextButton::textColourOnId,   kText);
+        addAndMakeVisible (btn);
+    }
+    sourceSynthButton.onClick   = [this] { proc.apvts.getParameter ("source")->setValueNotifyingHost (
+                                               proc.apvts.getParameter ("source")->convertTo0to1 (0.0f)); };
+    sourceSamplesButton.onClick = [this] { proc.apvts.getParameter ("source")->setValueNotifyingHost (
+                                               proc.apvts.getParameter ("source")->convertTo0to1 (1.0f)); };
 
     // ── BPM display ────────────────────────────────────────────────────────────
     bpmTitleLabel.setText ("BPM", juce::dontSendNotification);
@@ -124,10 +140,11 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     // Section labels
     g.setFont (juce::Font (10.0f));
     g.setColour (kMuted);
-    g.drawText ("STYLE",   12, 36, 60, 12, juce::Justification::left);
-    g.drawText ("DENSITY", 12, 94, 60, 12, juce::Justification::left);
+    g.drawText ("STYLE",   12, 36,  60, 12, juce::Justification::left);
+    g.drawText ("DENSITY", 12, 94,  60, 12, juce::Justification::left);
     g.drawText ("FOLLOW",  12, 144, 60, 12, juce::Justification::left);
     g.drawText ("ENERGY",  energyMeterBounds.getX(), 144, 80, 12, juce::Justification::left);
+    g.drawText ("SOUND",   12, 200, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
@@ -168,17 +185,21 @@ void AdaptiveDrummerEditor::resized()
     followButton.setBounds (m, 158, btnW, btnH);
     energyMeterBounds = juce::Rectangle<int> (m + btnW + m, 158, 2 * btnW + m, btnH);
 
-    // BPM  y=210
-    bpmTitleLabel.setBounds (m,      210, 30, 14);
-    bpmValueLabel.setBounds (m + 30, 206, 80, 28);
+    // Sound source buttons  y=214
+    sourceSynthButton  .setBounds (m,            214, btnW, btnH);
+    sourceSamplesButton.setBounds (m + btnW + m, 214, btnW, btnH);
+
+    // BPM  y=266
+    bpmTitleLabel.setBounds (m,      266, 30, 14);
+    bpmValueLabel.setBounds (m + 30, 262, 80, 28);
 
     // Volume  (right side)
-    volumeTitleLabel.setBounds (W - m - 60 - 14, 210, 30, 14);
-    volumeSlider    .setBounds (W - m - 60,       198, 60, 60);
+    volumeTitleLabel.setBounds (W - m - 60 - 14, 266, 30, 14);
+    volumeSlider    .setBounds (W - m - 60,       254, 60, 60);
 
     // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        300, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  302, W - 140, 20);
+    loadSamplesButton  .setBounds (m,        344, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  346, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -217,14 +238,26 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     mediumButton.setEnabled (! following);
     fullButton  .setEnabled (! following);
 
-    // Samples status
+    // Sound source buttons
+    const bool useSynth = static_cast<int> (*proc.apvts.getRawParameterValue ("source")) == 0;
+    sourceSynthButton  .setToggleState (useSynth,   juce::dontSendNotification);
+    sourceSamplesButton.setToggleState (! useSynth, juce::dontSendNotification);
+
+    // Samples status — only a warning in Samples mode (Synth needs no WAVs).
     const bool loaded = proc.areSamplesLoaded();
-    samplesStatusLabel.setText (
-        loaded ? "Samples loaded" : "No samples — click to load",
-        juce::dontSendNotification);
-    samplesStatusLabel.setColour (
-        juce::Label::textColourId,
-        loaded ? kText : juce::Colours::orange);
+    if (useSynth)
+    {
+        samplesStatusLabel.setText (loaded ? "Synth · samples ready" : "Synth · no samples needed",
+                                    juce::dontSendNotification);
+        samplesStatusLabel.setColour (juce::Label::textColourId, kMuted);
+    }
+    else
+    {
+        samplesStatusLabel.setText (loaded ? "Samples loaded" : "No samples — click to load",
+                                    juce::dontSendNotification);
+        samplesStatusLabel.setColour (juce::Label::textColourId,
+                                      loaded ? kText : juce::Colours::orange);
+    }
 }
 
 // ── Sample folder dialog ──────────────────────────────────────────────────────

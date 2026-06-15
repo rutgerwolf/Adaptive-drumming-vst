@@ -15,19 +15,20 @@ Standalone; verified to compile against JUCE master and render its editor headle
 
 | Area | State |
 |---|---|
-| Plugin scaffold | Complete — APVTS params, state save/restore, stereo synth bus |
-| UI | Complete — 420×300 editor: style/density buttons, host-synced BPM label, volume knob, sample loader |
+| Plugin scaffold | Complete — APVTS params, state save/restore, stereo out + sidechain in |
+| UI | Complete — 420×384 editor: style/density/follow/sound buttons, energy meter, BPM, volume, sample loader |
 | Pattern engine | Basic — 3 styles × 3 densities, 16-step bitmask grid, 1 bar |
-| Sample engine | Basic — loads one WAV per voice folder, mixes 6 voices |
-| Host sync | Partial — reads host **BPM** only (no ppq; B3 still open) |
+| Sound sources | **Synth** (built-in procedural voices, default) **or Samples** (Salamander WAV) |
+| Host sync | **BPM + ppq** — locks to the DAW bar line when playing (B3) |
 | "Adaptive" behaviour | **Follow mode** — density tracks guide-track energy via a sidechain input |
-| Tests | JUCE UnitTest suite (DrumPattern, DrumSampler, EnergyAnalyzer), run via CTest |
-| CI | GitHub Actions — Linux build + tests |
+| Tests | JUCE UnitTest suite (DrumPattern, DrumSampler, EnergyAnalyzer, AdaptiveDrummer, DrumSynth) via CTest |
+| CI | GitHub Actions — Linux + Windows build, tests, and pluginval |
 
-In short: the plugin now lives up to its name. The two high-priority audio
-bugs are fixed, a regression-test net + CI guards the timing maths, and the
-**adaptive Follow feature** (Phase 3) is in. Remaining work is correctness
-polish (B3 ppq sync) and musicality (Phase 4).
+In short: the plugin lives up to its name and runs as a product. High-priority
+bugs are fixed, host timing is ppq-locked, it is audible out of the box (synth)
+or with Salamander samples, the adaptive Follow feature is in, and a
+regression-test net + Linux/Windows CI + pluginval guard it. Remaining work is
+minor polish (A2 caching) and musicality (Phase 4).
 
 ---
 
@@ -92,8 +93,9 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
   `loadStyle`. **Fix:** cache the current style/density and rebuild only on change
   (also needed before adding per-pattern randomisation/fills).
 
-- **A3 · Low — volume zipper noise.**
-  Gain is applied raw (`src/PluginProcessor.cpp:94`). **Fix:** `SmoothedValue`.
+- **A3 · Low — ✅ FIXED — volume zipper noise.**
+  Output gain now ramps through a `juce::SmoothedValue` (20 ms) instead of being
+  applied raw, so moving the volume no longer zippers.
 
 ### Docs / feature mismatch
 
@@ -121,10 +123,12 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Phase 2 — Correctness & robustness
 1. ✅ Fixed the two **High** items: **B1** (sample gaps) and **C1** (load race).
-2. ✅ **A1** (VST3 sample path + remembered kit) fixed. ⏳ **B3** (host ppq sync) still open.
-3. ✅ Added `DrumPatternTest`, `DrumSamplerTest` (with a B1 regression) and
-   `EnergyAnalyzerTest`, plus **GitHub Actions CI** (Linux build + tests).
-4. ⏳ **D1**: velocity-layers-vs-docs — still open.
+2. ✅ **A1** (VST3 sample path + remembered kit) and **B3** (host ppq lock) fixed;
+   **A3** (volume zipper) smoothed via `SmoothedValue`.
+3. ✅ Unit tests (`DrumPattern`, `DrumSampler`/B1, `EnergyAnalyzer`,
+   `AdaptiveDrummer`/ppq, `DrumSynth`) via CTest, plus **CI on Linux + Windows**
+   with **pluginval** validation.
+4. ⏳ **D1** (velocity-layers-vs-docs) and **A2** (per-block pattern rebuild) — still open.
 
 ### Phase 3 — The "Adaptive" feature ✅ DONE
 1. ✅ New `EnergyAnalyzer`, **written fresh** for the plugin's audio-thread
@@ -133,6 +137,12 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 2. ✅ Added a **Sidechain** input bus; the guide is analysed every block.
 3. ✅ Energy → density with a hysteresis band; a **Follow** toggle switches
    between manual and adaptive density, and the UI shows a live energy meter.
+
+### Sound engine — Synth ✅ DONE
+A built-in **`DrumSynth`** (procedural kick/snare/hi-hat/crash/ride/tom) is an
+alternative to the sampler, chosen via the **Sound** parameter and the default,
+so the plugin is audible with no Salamander download. The sampler and synth
+share one step-trigger clock (`DrumStepClock.h`) for identical timing.
 
 ### Phase 4 — Musicality
 1. Per-step **velocity & accents**; humanisation (small timing/velocity jitter).
@@ -152,10 +162,10 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ## 4. Suggested next steps
 
-_B1, C1, A1, the test/CI net (Linux + Windows build, tests, pluginval) and
-Phase 3 (Follow mode) are done. Remaining:_
+_B1, C1, A1, B3, A3, the **Synth** sound source, the test/CI net (Linux + Windows
+build, tests, pluginval) and Phase 3 (Follow mode) are done. Remaining:_
 
-1. **B3** — derive the step index from host `ppqPosition` so the drummer locks to
-   the DAW timeline (also subsumes B4's truncation drift).
-2. **D1** — implement per-step velocity/accents (Phase 4) or correct the README.
+1. **A2** — cache style/density and rebuild the pattern only on change (needed
+   before per-pattern randomisation/fills).
+2. **D1** — per-step velocity & accents (Phase 4).
 3. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.

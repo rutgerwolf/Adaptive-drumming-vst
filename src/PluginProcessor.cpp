@@ -30,6 +30,10 @@ AdaptiveDrummerProcessor::createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "follow", 1 }, "Follow", false));
 
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "source", 1 }, "Sound",
+        juce::StringArray { "Synth", "Samples" }, 0));
+
     return layout;
 }
 
@@ -66,6 +70,9 @@ void AdaptiveDrummerProcessor::prepareToPlay (double sampleRate, int samplesPerB
     drummer.prepare (sampleRate, samplesPerBlock);
     energyAnalyzer.prepare (sampleRate, samplesPerBlock);
 
+    volumeSmoothed.reset (sampleRate, 0.02);   // 20 ms ramp
+    volumeSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("volume"));
+
     autoLoadSamples();
 }
 
@@ -100,17 +107,31 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     buffer.clear();   // safe now — the guide has already been analysed
 
-    // BPM: host playhead takes priority over manual parameter
-    double bpm = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
+    // Host transport: BPM takes priority over the manual parameter, and when the
+    // transport is rolling the ppq position locks the drummer to the DAW timeline.
+    double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
+    bool   hostPlaying = false;
+    double hostPpq     = 0.0;
     if (auto* playHead = getPlayHead())
         if (auto pos = playHead->getPosition())
+        {
             if (auto hostBpm = pos->getBpm())
                 bpm = *hostBpm;
+            if (auto ppq = pos->getPpqPosition())
+            {
+                hostPpq     = *ppq;
+                hostPlaying = pos->getIsPlaying();
+            }
+        }
     currentBpm = bpm;
     drummer.setBpm (bpm);
+    drummer.setHostTimeline (hostPlaying, hostPpq);
 
     drummer.setStyle (static_cast<DrumPattern::Style> (
         static_cast<int> (*apvts.getRawParameterValue ("style"))));
+
+    // Sound source: 0 = Synth (no samples needed), 1 = Samples.
+    drummer.setUseSynth (static_cast<int> (*apvts.getRawParameterValue ("source")) == 0);
 
     // Density: adaptive from the guide energy when Follow is on, else manual.
     const DrumPattern::Density density = follow
@@ -123,7 +144,9 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Generate drums into the main output bus.
     drummer.processBlock (mainOut, numSamples);
 
-    mainOut.applyGain (*apvts.getRawParameterValue ("volume"));
+    // Volume — smoothed to avoid zipper noise when the knob moves (A3).
+    volumeSmoothed.setTargetValue (*apvts.getRawParameterValue ("volume"));
+    volumeSmoothed.applyGain (mainOut, numSamples);
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────

@@ -33,6 +33,7 @@ target_sources(AdaptiveDrummer PRIVATE
     src/PluginEditor.cpp
     src/drummer/DrumPattern.cpp
     src/drummer/DrumSampler.cpp
+    src/drummer/DrumSynth.cpp
     src/drummer/AdaptiveDrummer.cpp
     src/drummer/EnergyAnalyzer.cpp
 )
@@ -99,9 +100,13 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         tests/DrumPatternTest.cpp
         tests/DrumSamplerTest.cpp
         tests/EnergyAnalyzerTest.cpp
+        tests/AdaptiveDrummerTest.cpp
+        tests/DrumSynthTest.cpp
         src/drummer/DrumPattern.cpp
         src/drummer/DrumSampler.cpp
+        src/drummer/DrumSynth.cpp
         src/drummer/EnergyAnalyzer.cpp
+        src/drummer/AdaptiveDrummer.cpp
     )
 
     target_include_directories(AdaptiveDrummerTests PRIVATE src)

@@ -79,5 +79,7 @@ private:
     double           currentBpm          { 120.0 };
     std::atomic<int> currentDensityState { static_cast<int> (DrumPattern::Density::Medium) };
 
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdaptiveDrummerProcessor)
 };

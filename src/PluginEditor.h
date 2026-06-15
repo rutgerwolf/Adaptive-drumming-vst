@@ -44,6 +44,10 @@ private:
     juce::Rectangle<int> energyMeterBounds;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followAttachment;
 
+    // Sound source (synthesised voices vs. WAV samples)
+    juce::TextButton sourceSynthButton   { "Synth" };
+    juce::TextButton sourceSamplesButton { "Samples" };
+
     // BPM
     juce::Label bpmTitleLabel;
     juce::Label bpmValueLabel;
