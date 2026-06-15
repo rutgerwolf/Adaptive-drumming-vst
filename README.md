@@ -28,7 +28,7 @@ own tempo when used as a standalone application.
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  ADAPTIVE DRUMMER                                   │
+│  ADAPTIVE DRUMMER                          [ Play ] │
 ├─────────────────────────────────────────────────────┤
 │  Style   [ Rock ]  [ Jazz ]  [ Electronic ]         │
 │  Density [ Sparse ] [ Medium ] [ Full ]             │
@@ -46,6 +46,7 @@ own tempo when used as a standalone application.
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
+- **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
 - **Density row** — radio buttons (group 2); controls how many hits are placed per bar. Disabled while **Follow** is on (density is then automatic).
 - **Follow toggle** — when on, the density tracks the guide-track energy on the sidechain input instead of the manual density buttons.
 - **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
@@ -53,6 +54,16 @@ own tempo when used as a standalone application.
 - **BPM display** — read-only label, refreshed at 10 Hz from the processor. Shows host BPM when a DAW transport is active.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
 - **Load samples…** — opens a folder chooser; expects the Salamander layout described below.
+
+---
+
+## Host compatibility
+
+Adaptive Drummer is an **instrument** plugin (it generates audio; VST3 category `Instrument|Drums`). Host it where instruments/VSTi are supported — e.g. Reaper, Ableton Live, Cubase, FL Studio, Bitwig — or run the **Standalone** app and press **Play**.
+
+> **Adobe Audition** only hosts *effect* plugins, not instruments, so it will not list this plugin. That is expected and not a build problem.
+
+A VST3 is a **bundle** (a folder), not a single file. The real binary lives at `Adaptive Drummer.vst3/Contents/<arch>/Adaptive Drummer.vst3` (e.g. `x86_64-win` on Windows) alongside `Contents/Resources/moduleinfo.json` — copy the whole `Adaptive Drummer.vst3` folder into your VST3 path (`%COMMONPROGRAMFILES%\VST3` on Windows) and rescan.
 
 ---
 
@@ -66,6 +77,7 @@ own tempo when used as a standalone application.
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
 | `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
+| `play` | Bool | off · on | off | Transport: generate drums (also driven by the host transport) |
 
 All parameters are automatable and saved with the DAW session.
 

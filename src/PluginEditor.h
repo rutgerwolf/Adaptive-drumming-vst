@@ -48,6 +48,10 @@ private:
     juce::TextButton sourceSynthButton   { "Synth" };
     juce::TextButton sourceSamplesButton { "Samples" };
 
+    // Transport — drives the standalone; also overrides a stopped host transport
+    juce::TextButton playButton { "Play" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> playAttachment;
+
     // BPM
     juce::Label bpmTitleLabel;
     juce::Label bpmValueLabel;

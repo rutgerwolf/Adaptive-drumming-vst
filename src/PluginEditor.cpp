@@ -77,6 +77,16 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     sourceSamplesButton.onClick = [this] { proc.apvts.getParameter ("source")->setValueNotifyingHost (
                                                proc.apvts.getParameter ("source")->convertTo0to1 (1.0f)); };
 
+    // ── Transport (Play / Stop) ──────────────────────────────────────────────
+    playButton.setClickingTogglesState (true);
+    playButton.setColour (juce::TextButton::buttonColourId,   kPanel);
+    playButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3fae6b));
+    playButton.setColour (juce::TextButton::textColourOffId,  kText);
+    playButton.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+    addAndMakeVisible (playButton);
+    playAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        proc.apvts, "play", playButton);
+
     // ── BPM display ────────────────────────────────────────────────────────────
     bpmTitleLabel.setText ("BPM", juce::dontSendNotification);
     bpmTitleLabel.setColour (juce::Label::textColourId, kMuted);
@@ -171,6 +181,9 @@ void AdaptiveDrummerEditor::resized()
     const int btnH = 28;
     const int btnW = (W - 4 * m) / 3;
 
+    // Transport — top-right of the title bar
+    playButton.setBounds (W - m - 72, 4, 72, 22);
+
     // Style buttons  y=50
     rockButton      .setBounds (m,                   50, btnW, btnH);
     jazzButton      .setBounds (m + btnW + m,        50, btnW, btnH);
@@ -212,6 +225,10 @@ void AdaptiveDrummerEditor::timerCallback()
 
 void AdaptiveDrummerEditor::updateFromProcessor()
 {
+    // Transport button reflects play state
+    const bool playing = *proc.apvts.getRawParameterValue ("play") > 0.5f;
+    playButton.setButtonText (playing ? "Stop" : "Play");
+
     // BPM display
     bpmValueLabel.setText (
         juce::String (proc.getCurrentBpm(), 1),

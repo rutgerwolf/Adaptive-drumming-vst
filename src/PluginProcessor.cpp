@@ -34,6 +34,9 @@ AdaptiveDrummerProcessor::createParameterLayout()
         juce::ParameterID { "source", 1 }, "Sound",
         juce::StringArray { "Synth", "Samples" }, 0));
 
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "play", 1 }, "Play", false));
+
     return layout;
 }
 
@@ -109,23 +112,29 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     // Host transport: BPM takes priority over the manual parameter, and when the
     // transport is rolling the ppq position locks the drummer to the DAW timeline.
+    // Standalone has no meaningful transport, so we ignore its playhead there and
+    // let the Play button drive playback instead.
     double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
     bool   hostPlaying = false;
     double hostPpq     = 0.0;
-    if (auto* playHead = getPlayHead())
-        if (auto pos = playHead->getPosition())
-        {
-            if (auto hostBpm = pos->getBpm())
-                bpm = *hostBpm;
-            if (auto ppq = pos->getPpqPosition())
+    if (wrapperType != wrapperType_Standalone)
+        if (auto* playHead = getPlayHead())
+            if (auto pos = playHead->getPosition())
             {
-                hostPpq     = *ppq;
-                hostPlaying = pos->getIsPlaying();
+                if (auto hostBpm = pos->getBpm())
+                    bpm = *hostBpm;
+                if (auto ppq = pos->getPpqPosition())
+                {
+                    hostPpq     = *ppq;
+                    hostPlaying = pos->getIsPlaying();
+                }
             }
-        }
     currentBpm = bpm;
     drummer.setBpm (bpm);
     drummer.setHostTimeline (hostPlaying, hostPpq);
+
+    // Play when the user's Play toggle is on, or the host transport is rolling.
+    const bool playing = *apvts.getRawParameterValue ("play") > 0.5f || hostPlaying;
 
     drummer.setStyle (static_cast<DrumPattern::Style> (
         static_cast<int> (*apvts.getRawParameterValue ("style"))));
@@ -141,8 +150,11 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     drummer.setDensity (density);
     currentDensityState.store (static_cast<int> (density), std::memory_order_relaxed);
 
-    // Generate drums into the main output bus.
-    drummer.processBlock (mainOut, numSamples);
+    // Generate drums into the main output bus (silence + rewind when stopped).
+    if (playing)
+        drummer.processBlock (mainOut, numSamples);
+    else
+        drummer.reset();
 
     // Volume — smoothed to avoid zipper noise when the knob moves (A3).
     volumeSmoothed.setTargetValue (*apvts.getRawParameterValue ("volume"));

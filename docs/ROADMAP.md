@@ -162,10 +162,15 @@ share one step-trigger clock (`DrumStepClock.h`) for identical timing.
 
 ## 4. Suggested next steps
 
-_B1, C1, A1, B3, A3, the **Synth** sound source, the test/CI net (Linux + Windows
-build, tests, pluginval) and Phase 3 (Follow mode) are done. Remaining:_
+_B1, C1, A1, B3, A3, the **Synth** sound source, a Standalone **Play/Stop**
+transport, the test/CI net (Linux + Windows build, tests, pluginval) and Phase 3
+(Follow mode) are done. Note: this is an *instrument* plugin, so effect-only hosts
+(e.g. Adobe Audition) will not list it — use an instrument host or the Standalone.
+Remaining:_
 
-1. **A2** — cache style/density and rebuild the pattern only on change (needed
+1. **Standalone tempo control** — the BPM display is read-only; add an editable
+   tempo for the Standalone (it currently runs at the `bpm` parameter, default 120).
+2. **A2** — cache style/density and rebuild the pattern only on change (needed
    before per-pattern randomisation/fills).
-2. **D1** — per-step velocity & accents (Phase 4).
-3. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.
+3. **D1** — per-step velocity & accents (Phase 4).
+4. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.
