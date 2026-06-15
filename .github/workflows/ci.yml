@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  # Branch work is validated via the pull_request event, so only build the push
+  # for main (avoids a duplicate run for every push to an open PR's branch).
   push:
-    branches: [ main, "claude/**" ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -63,7 +65,8 @@ jobs:
 
   windows:
     name: Windows · build, tests & pluginval
-    runs-on: windows-latest
+    # Pinned: needs the VS 2022 generator used below (and in the README).
+    runs-on: windows-2022
 
     steps:
       - name: Checkout (with JUCE submodule)
