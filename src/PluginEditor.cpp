@@ -13,7 +13,7 @@ static const juce::Colour kAccent { 0xff6c9bd1 };
 AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     : AudioProcessorEditor (&p), proc (p)
 {
-    setSize (420, 300);
+    setSize (420, 340);
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -50,6 +50,16 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
                                         proc.apvts.getParameter ("density")->convertTo0to1 (1.0f)); };
     fullButton.onClick   = [this] { proc.apvts.getParameter ("density")->setValueNotifyingHost (
                                         proc.apvts.getParameter ("density")->convertTo0to1 (2.0f)); };
+
+    // ── Follow toggle (adaptive density from the guide track) ────────────────
+    followButton.setClickingTogglesState (true);
+    followButton.setColour (juce::TextButton::buttonColourId,   kPanel);
+    followButton.setColour (juce::TextButton::buttonOnColourId, kActive);
+    followButton.setColour (juce::TextButton::textColourOffId,  kMuted);
+    followButton.setColour (juce::TextButton::textColourOnId,   kText);
+    addAndMakeVisible (followButton);
+    followAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        proc.apvts, "follow", followButton);
 
     // ── BPM display ────────────────────────────────────────────────────────────
     bpmTitleLabel.setText ("BPM", juce::dontSendNotification);
@@ -116,6 +126,23 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.setColour (kMuted);
     g.drawText ("STYLE",   12, 36, 60, 12, juce::Justification::left);
     g.drawText ("DENSITY", 12, 94, 60, 12, juce::Justification::left);
+    g.drawText ("FOLLOW",  12, 144, 60, 12, juce::Justification::left);
+    g.drawText ("ENERGY",  energyMeterBounds.getX(), 144, 80, 12, juce::Justification::left);
+
+    // Guide-energy meter
+    g.setColour (kPanel);
+    g.fillRect (energyMeterBounds);
+    const float e = juce::jlimit (0.0f, 1.0f, proc.getEnergy());
+    if (e > 0.0f)
+    {
+        auto fill = energyMeterBounds.toFloat()
+                        .withWidth (energyMeterBounds.getWidth() * e)
+                        .reduced (1.0f);
+        g.setColour (kAccent);
+        g.fillRect (fill);
+    }
+    g.setColour (kMuted);
+    g.drawRect (energyMeterBounds);
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -137,17 +164,21 @@ void AdaptiveDrummerEditor::resized()
     mediumButton.setBounds (m + btnW + m,        106, btnW, btnH);
     fullButton  .setBounds (m + 2 * (btnW + m),  106, btnW, btnH);
 
-    // BPM  y=152
-    bpmTitleLabel.setBounds (m,      152, 30, 14);
-    bpmValueLabel.setBounds (m + 30, 148, 80, 28);
+    // Follow toggle + energy meter  y=158
+    followButton.setBounds (m, 158, btnW, btnH);
+    energyMeterBounds = juce::Rectangle<int> (m + btnW + m, 158, 2 * btnW + m, btnH);
 
-    // Volume  y=148 (right side)
-    volumeTitleLabel.setBounds (W - m - 60 - 14, 152, 30, 14);
-    volumeSlider    .setBounds (W - m - 60,       140, 60, 60);
+    // BPM  y=210
+    bpmTitleLabel.setBounds (m,      210, 30, 14);
+    bpmValueLabel.setBounds (m + 30, 206, 80, 28);
+
+    // Volume  (right side)
+    volumeTitleLabel.setBounds (W - m - 60 - 14, 210, 30, 14);
+    volumeSlider    .setBounds (W - m - 60,       198, 60, 60);
 
     // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        260, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  262, W - 140, 20);
+    loadSamplesButton  .setBounds (m,        300, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  302, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -155,6 +186,7 @@ void AdaptiveDrummerEditor::resized()
 void AdaptiveDrummerEditor::timerCallback()
 {
     updateFromProcessor();
+    repaint (energyMeterBounds);   // live guide-energy meter
 }
 
 void AdaptiveDrummerEditor::updateFromProcessor()
@@ -170,11 +202,20 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     jazzButton      .setToggleState (style == 1, juce::dontSendNotification);
     electronicButton.setToggleState (style == 2, juce::dontSendNotification);
 
-    // Sync density button toggle states
-    const int density = static_cast<int> (*proc.apvts.getRawParameterValue ("density"));
+    // Density buttons: when Follow is on the density is chosen by the guide
+    // energy, so reflect the active density and disable the manual buttons.
+    const bool following = *proc.apvts.getRawParameterValue ("follow") > 0.5f;
+    const int  density   = following
+        ? static_cast<int> (proc.getCurrentDensity())
+        : static_cast<int> (*proc.apvts.getRawParameterValue ("density"));
+
     sparseButton.setToggleState (density == 0, juce::dontSendNotification);
     mediumButton.setToggleState (density == 1, juce::dontSendNotification);
     fullButton  .setToggleState (density == 2, juce::dontSendNotification);
+
+    sparseButton.setEnabled (! following);
+    mediumButton.setEnabled (! following);
+    fullButton  .setEnabled (! following);
 
     // Samples status
     const bool loaded = proc.areSamplesLoaded();

@@ -19,13 +19,15 @@ Standalone; verified to compile against JUCE master and render its editor headle
 | UI | Complete — 420×300 editor: style/density buttons, host-synced BPM label, volume knob, sample loader |
 | Pattern engine | Basic — 3 styles × 3 densities, 16-step bitmask grid, 1 bar |
 | Sample engine | Basic — loads one WAV per voice folder, mixes 6 voices |
-| Host sync | Partial — reads host **BPM** only |
-| "Adaptive" behaviour | **Not implemented** — style/density are fully manual |
-| Tests | **None** in this repo |
-| CI | **None** |
+| Host sync | Partial — reads host **BPM** only (no ppq; B3 still open) |
+| "Adaptive" behaviour | **Follow mode** — density tracks guide-track energy via a sidechain input |
+| Tests | JUCE UnitTest suite (DrumPattern, DrumSampler, EnergyAnalyzer), run via CTest |
+| CI | GitHub Actions — Linux build + tests |
 
-In short: v1 is a solid *static pattern player* with a clean UI. The headline
-promise in the name — *adaptive* drumming — is not yet present.
+In short: the plugin now lives up to its name. The two high-priority audio
+bugs are fixed, a regression-test net + CI guards the timing maths, and the
+**adaptive Follow feature** (Phase 3) is in. Remaining work is correctness
+polish (B3 ppq sync) and musicality (Phase 4).
 
 ---
 
@@ -36,7 +38,7 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Audio correctness
 
-- **B1 · High — gaps on every sustained sample.**
+- **B1 · High — ✅ FIXED — gaps on every sustained sample.**
   `DrumSampler::mixVoices` always starts copying at `v.triggerOffset`
   (`src/drummer/DrumSampler.cpp:138`). For a note that started in a *previous*
   block and is still ringing, `triggerOffset` still holds its original in-block
@@ -67,7 +69,7 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Concurrency
 
-- **C1 · High — data race on sample load.**
+- **C1 · High — ✅ FIXED — data race on sample load.**
   `DrumSampler::loadSamples` runs on the message thread (editor "Load samples…"
   button) and resizes/overwrites `voices[].sample` while `processBlock` reads those
   buffers on the audio thread. No lock or atomic swap → race and possible crash.
@@ -77,12 +79,12 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Correctness / API
 
-- **A1 · Med — VST3 sample auto-load path is wrong.**
-  `prepareToPlay` resolves samples relative to `File::currentApplicationFile`
-  (`src/PluginProcessor.cpp:56`). In a DAW that is the **host** executable, not the
-  plugin bundle, so auto-load only works for Standalone. **Fix:** resolve relative
-  to the plugin module, or use a user/app-data location, or remember the
-  last-used folder in plugin state.
+- **A1 · Med — ✅ FIXED — VST3 sample auto-load path.**
+  `prepareToPlay` used to resolve samples relative to `File::currentApplicationFile`
+  (the host exe in a DAW), so auto-load only worked for Standalone. Now the last
+  successfully-loaded folder is remembered in plugin state and reloaded on restore,
+  and `autoLoadSamples()` tries that folder first, then assets next to the plugin
+  binary (`currentExecutableFile`), then next to the host/standalone exe.
 
 - **A2 · Low — pattern rebuilt every block.**
   `processBlock` calls `setStyle`/`setDensity` unconditionally
@@ -106,8 +108,10 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Process
 
-- **P1 — no tests** in this repo (winband had `DrumPatternTest`). High regression
-  risk for the pattern/timing maths.
+- **P1 — ✅ DONE — tests + CI.** A JUCE UnitTest suite covers the pattern/timing
+  maths (`DrumPatternTest`), the sampler incl. a B1 regression (`DrumSamplerTest`),
+  and the adaptive mapping (`EnergyAnalyzerTest`); GitHub Actions builds + runs them
+  on Linux.
 - **P2 — deprecation warnings:** `juce::Font(float)` constructors are deprecated in
   JUCE 8; the editor uses them throughout.
 
@@ -115,17 +119,20 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ## 3. Roadmap
 
-### Phase 2 — Correctness & robustness _(do this before any new features)_
-1. Fix the two **High** items: **B1** (sample gaps) and **C1** (load race).
-2. Fix **B3** (host ppq sync) and **A1** (VST3 sample path).
-3. Port `DrumPatternTest` from winband; add a `DrumSamplerTest`; add **GitHub
-   Actions CI** (Linux build + tests at minimum).
-4. Resolve **D1**: decide velocity-layers-vs-docs and make code and README agree.
+### Phase 2 — Correctness & robustness
+1. ✅ Fixed the two **High** items: **B1** (sample gaps) and **C1** (load race).
+2. ✅ **A1** (VST3 sample path + remembered kit) fixed. ⏳ **B3** (host ppq sync) still open.
+3. ✅ Added `DrumPatternTest`, `DrumSamplerTest` (with a B1 regression) and
+   `EnergyAnalyzerTest`, plus **GitHub Actions CI** (Linux build + tests).
+4. ⏳ **D1**: velocity-layers-vs-docs — still open.
 
-### Phase 3 — The "Adaptive" feature _(the product's reason to exist)_
-1. Port `EnergyAnalyzer` from winband (guide-track RMS/energy envelope).
-2. Add a guide/sidechain input bus; analyse incoming audio per block.
-3. Map energy → density automatically; add a **Follow** toggle (manual ↔ adaptive).
+### Phase 3 — The "Adaptive" feature ✅ DONE
+1. ✅ New `EnergyAnalyzer`, **written fresh** for the plugin's audio-thread
+   context (winband used only as a conceptual reference): guide RMS → dB →
+   attack/release envelope → 0..1 energy.
+2. ✅ Added a **Sidechain** input bus; the guide is analysed every block.
+3. ✅ Energy → density with a hysteresis band; a **Follow** toggle switches
+   between manual and adaptive density, and the UI shows a live energy meter.
 
 ### Phase 4 — Musicality
 1. Per-step **velocity & accents**; humanisation (small timing/velocity jitter).
@@ -143,12 +150,12 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ---
 
-## 4. Suggested immediate next steps (next session)
+## 4. Suggested next steps
 
-1. **B1** — reset `triggerOffset` after the first block in `mixVoices` (small,
-   high-impact, audible).
-2. **C1** — make sample loading thread-safe (swap under a lock the audio thread
-   try-locks).
-3. Add **CI** + port `DrumPatternTest` so the above are covered by a regression net.
-4. Then start **Phase 3** (the actual adaptive behaviour) — that is what makes the
-   plugin live up to its name.
+_B1, C1, A1, the test/CI net (Linux + Windows build, tests, pluginval) and
+Phase 3 (Follow mode) are done. Remaining:_
+
+1. **B3** — derive the step index from host `ppqPosition` so the drummer locks to
+   the DAW timeline (also subsumes B4's truncation drift).
+2. **D1** — implement per-step velocity/accents (Phase 4) or correct the README.
+3. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.

@@ -39,6 +39,11 @@ private:
     juce::TextButton mediumButton { "Medium" };
     juce::TextButton fullButton   { "Full" };
 
+    // Follow (adaptive density) + guide-energy meter
+    juce::TextButton     followButton { "Follow" };
+    juce::Rectangle<int> energyMeterBounds;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followAttachment;
+
     // BPM
     juce::Label bpmTitleLabel;
     juce::Label bpmValueLabel;

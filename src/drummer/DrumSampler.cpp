@@ -1,5 +1,7 @@
 #include "DrumSampler.h"
 
+#include <utility>
+
 const char* DrumSampler::kVoiceDirs[DrumSampler::kNumVoices] =
     { "kick", "snare", "hihat", "crash", "ride", "tom" };
 
@@ -15,20 +17,21 @@ void DrumSampler::prepare (double sampleRate)
 
 bool DrumSampler::loadSamples (const juce::File& root)
 {
-    anyVoiceLoaded = false;
-
     if (! root.isDirectory())
     {
         DBG ("DrumSampler: root not found: " + root.getFullPathName());
+        anyVoiceLoaded.store (false, std::memory_order_relaxed);
         return false;
     }
 
+    // Build the new set off the audio thread — no lock held during file I/O.
+    SampleSet newSet;
     for (int i = 0; i < kNumVoices; ++i)
     {
         const auto dir = root.getChildFile (kVoiceDirs[i]);
-        if (loadFirstWavInDir (dir, voices[i].sample))
+        if (loadFirstWavInDir (dir, newSet.samples[i]))
         {
-            anyVoiceLoaded = true;
+            newSet.anyLoaded = true;
             DBG ("DrumSampler: loaded " + juce::String (kVoiceDirs[i]));
         }
         else
@@ -37,7 +40,19 @@ bool DrumSampler::loadSamples (const juce::File& root)
         }
     }
 
-    return anyVoiceLoaded;
+    const bool loaded = newSet.anyLoaded;
+
+    // Swap the new set in under the lock the audio thread try-locks. The swap is
+    // O(1) (AudioBuffer moves), so the audio thread almost never waits. After the
+    // swap `newSet` owns the *old* buffers, which are freed here on this thread.
+    {
+        const juce::SpinLock::ScopedLockType sl (sampleLock);
+        std::swap (sampleSet, newSet);
+        for (auto& v : voices) { v.playPos = -1; v.triggerOffset = 0; }
+    }
+
+    anyVoiceLoaded.store (loaded, std::memory_order_relaxed);
+    return loaded;
 }
 
 void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
@@ -47,6 +62,10 @@ void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
                                 double                    bpm,
                                 int                       playheadSample)
 {
+    // If loadSamples() is mid-swap, skip this block rather than race the buffers.
+    const juce::SpinLock::ScopedTryLockType sl (sampleLock);
+    if (! sl.isLocked()) return;
+
     const int patternLen = pattern.getLengthInSamples (bpm, sampleRate);
     if (patternLen <= 0) return;
 
@@ -131,26 +150,38 @@ void DrumSampler::triggerVoice (int voiceIndex, int blockOffset)
 
 void DrumSampler::mixVoices (juce::AudioBuffer<float>& outBuffer, int numSamples)
 {
-    for (auto& v : voices)
+    for (int i = 0; i < kNumVoices; ++i)
     {
-        if (v.playPos < 0 || v.sample.getNumSamples() == 0) continue;
+        auto&       v      = voices[i];
+        const auto& sample = sampleSet.samples[i];
+
+        if (v.playPos < 0 || sample.getNumSamples() == 0) continue;
+
+        // A newly-loaded set may be shorter than where an in-flight cursor sits.
+        if (v.playPos >= sample.getNumSamples()) { v.playPos = -1; continue; }
 
         const int startInBlock = v.triggerOffset;
         const int blockRemain  = numSamples - startInBlock;
         if (blockRemain <= 0) continue;
 
-        const int sampleRemain = v.sample.getNumSamples() - v.playPos;
+        const int sampleRemain = sample.getNumSamples() - v.playPos;
         const int toCopy       = juce::jmin (blockRemain, sampleRemain);
 
         for (int ch = 0; ch < outBuffer.getNumChannels(); ++ch)
         {
-            const int srcCh = juce::jmin (ch, v.sample.getNumChannels() - 1);
+            const int srcCh = juce::jmin (ch, sample.getNumChannels() - 1);
             outBuffer.addFrom (ch, startInBlock,
-                               v.sample, srcCh, v.playPos, toCopy);
+                               sample, srcCh, v.playPos, toCopy);
         }
 
         v.playPos += toCopy;
-        if (v.playPos >= v.sample.getNumSamples())
+        if (v.playPos >= sample.getNumSamples())
             v.playPos = -1;
+
+        // B1 fix: once this block has been served, the note continues from the
+        // start of the next block. Without this reset, every subsequent block
+        // re-skips `triggerOffset` samples → a recurring gap/click on any sample
+        // longer than one buffer.
+        v.triggerOffset = 0;
     }
 }
