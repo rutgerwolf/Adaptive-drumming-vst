@@ -15,6 +15,7 @@ own tempo when used as a standalone application.
 |---|---|
 | Styles | Rock, Jazz, Electronic |
 | Pattern densities | Sparse, Medium, Full |
+| Adaptive density | **Follow** mode maps the energy of a guide track (sidechain input) to density |
 | BPM sync | Reads host transport; falls back to own BPM parameter |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
@@ -30,6 +31,7 @@ own tempo when used as a standalone application.
 ├─────────────────────────────────────────────────────┤
 │  Style   [ Rock ]  [ Jazz ]  [ Electronic ]         │
 │  Density [ Sparse ] [ Medium ] [ Full ]             │
+│  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
 ├─────────────────────────────────────────────────────┤
 │  BPM  120.0  (synced to host)                       │
 │                                                     │
@@ -38,11 +40,13 @@ own tempo when used as a standalone application.
 │  Samples: kick/ snare/ hihat/ crash/ ride/ tom/     │
 │  [Load samples...]                                  │
 └─────────────────────────────────────────────────────┘
-         420 × 300 px
+         420 × 340 px
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
-- **Density row** — radio buttons (group 2); controls how many hits are placed per bar.
+- **Density row** — radio buttons (group 2); controls how many hits are placed per bar. Disabled while **Follow** is on (density is then automatic).
+- **Follow toggle** — when on, the density tracks the guide-track energy on the sidechain input instead of the manual density buttons.
+- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
 - **BPM display** — read-only label, refreshed at 10 Hz from the processor. Shows host BPM when a DAW transport is active.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
 - **Load samples…** — opens a folder chooser; expects the Salamander layout described below.
@@ -57,8 +61,30 @@ own tempo when used as a standalone application.
 | `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Pattern density |
 | `bpm` | Float | 40–240 (step 0.1) | 120 | Fallback BPM (ignored when host provides one) |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
+| `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
 
 All parameters are automatable and saved with the DAW session.
+
+---
+
+## Adaptive "Follow" mode
+
+The plugin exposes a **Sidechain** input bus (the *guide track*). With **Follow**
+enabled, the incoming guide audio is analysed every block and its energy drives
+the pattern density automatically:
+
+- block RMS -> dB -> normalised to 0-1 -> attack/release envelope -> **energy**;
+- energy maps to **Sparse / Medium / Full** through a hysteresis band, so the
+  density rises and falls smoothly instead of chattering at the thresholds.
+
+Route the part you want the drummer to react to (a vocal, a guitar, a full mix)
+into the plugin's sidechain input and turn **Follow** on. Louder/busier guide ->
+fuller pattern; quieter guide -> sparser pattern. With Follow off, the sidechain
+is ignored and the manual **Density** buttons are used. The `style` stays manual
+in both modes.
+
+> In a DAW, assign a send/bus to the plugin's *Sidechain* input. The bus is
+> optional - when it is disabled or silent the energy falls to zero (Sparse).
 
 ---
 
@@ -140,6 +166,31 @@ Then rescan plugins in your DAW.
 
 ---
 
+## Building on Linux / running the tests
+
+The plugin also builds on Linux (used by CI). Install the JUCE build
+dependencies, then configure and build:
+
+```sh
+sudo apt install libfreetype-dev libfontconfig1-dev libx11-dev libxext-dev \
+  libxinerama-dev libxrandr-dev libxcursor-dev libxcomposite-dev \
+  libasound2-dev libgl1-mesa-dev
+
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+```
+
+The unit-test target (`AdaptiveDrummerTests`, on by default) runs via CTest:
+
+```sh
+ctest --test-dir build --output-on-failure
+```
+
+To skip building the tests, configure with `-DADAPTIVE_DRUMMER_BUILD_TESTS=OFF`.
+The same build + test flow runs on every push via `.github/workflows/ci.yml`.
+
+---
+
 ## Samples
 
 The Salamander Drumkit WAV files are **not included** in this repository (~2 GB, CC BY 3.0).
@@ -167,17 +218,20 @@ that follows the layout above.
 
 ```
 Adaptive-drumming-vst\
-├── CMakeLists.txt                    # JUCE plugin target (VST3 + Standalone)
+├── CMakeLists.txt                    # JUCE plugin target + unit-test target
 ├── .gitmodules                       # JUCE submodule
+├── .github\workflows\ci.yml          # Linux build + tests (CI)
 ├── assets\
 │   └── samples\salamander\           # Salamander Drumkit (not in repo)
 ├── src\
-│   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, state I/O
-│   ├── PluginEditor.h/.cpp           # 420×300 UI
+│   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, sidechain, state I/O
+│   ├── PluginEditor.h/.cpp           # 420×340 UI (incl. Follow + energy meter)
 │   └── drummer\
 │       ├── AdaptiveDrummer.h/.cpp    # Orchestrator
 │       ├── DrumPattern.h/.cpp        # 16-step bitmask grid
-│       └── DrumSampler.h/.cpp        # WAV loader + playback
+│       ├── DrumSampler.h/.cpp        # WAV loader + playback
+│       └── EnergyAnalyzer.h/.cpp     # Guide-track energy → adaptive density
+├── tests\                            # JUCE UnitTest suite (run via CTest)
 └── third_party\
     └── JUCE\                         # git submodule
 ```
