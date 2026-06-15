@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AdaptiveDrummer VERSION 1.0.0 LANGUAGES CXX)
+project(AdaptiveDrummer VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -81,3 +81,47 @@ add_custom_command(TARGET AdaptiveDrummer_Standalone POST_BUILD
         "$<TARGET_FILE_DIR:AdaptiveDrummer_Standalone>/assets"
     COMMENT "Copying assets to Standalone output"
 )
+
+# ── Unit tests ─────────────────────────────────────────────────────────────────
+option(ADAPTIVE_DRUMMER_BUILD_TESTS "Build the AdaptiveDrummer unit-test suite" ON)
+
+if(ADAPTIVE_DRUMMER_BUILD_TESTS)
+    enable_testing()
+
+    juce_add_console_app(AdaptiveDrummerTests
+        PRODUCT_NAME "AdaptiveDrummerTests")
+
+    juce_generate_juce_header(AdaptiveDrummerTests)
+
+    target_sources(AdaptiveDrummerTests PRIVATE
+        tests/TestRunner.cpp
+        tests/DrumPatternTest.cpp
+        tests/DrumSamplerTest.cpp
+        src/drummer/DrumPattern.cpp
+        src/drummer/DrumSampler.cpp
+    )
+
+    target_include_directories(AdaptiveDrummerTests PRIVATE src)
+
+    target_compile_definitions(AdaptiveDrummerTests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_STANDALONE_APPLICATION=1
+    )
+
+    target_link_libraries(AdaptiveDrummerTests
+        PRIVATE
+            juce::juce_audio_basics
+            juce::juce_audio_formats
+            juce::juce_core
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+
+    if(MSVC)
+        target_compile_options(AdaptiveDrummerTests PRIVATE /utf-8)
+    endif()
+
+    add_test(NAME AdaptiveDrummerTests COMMAND AdaptiveDrummerTests)
+endif()

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, "claude/**" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-build-and-test:
+    name: Linux · build & unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with JUCE submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install JUCE build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libfreetype-dev libfontconfig1-dev libx11-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxcursor-dev libxcomposite-dev \
+            libasound2-dev libgl1-mesa-dev ninja-build
+
+      - name: Cache compiled objects (ccache)
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-ccache
+
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DADAPTIVE_DRUMMER_BUILD_TESTS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build (plugin + tests)
+        run: cmake --build build --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
