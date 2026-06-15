@@ -4,14 +4,16 @@
 #include "DrumSampler.h"
 
 /**
- * AdaptiveDrummer v1
+ * AdaptiveDrummer
  *
  * Generates drum audio from a DrumPattern + DrumSampler.
  * Style and density are controlled externally (via plugin parameters).
  * BPM is provided by the DAW host or set manually.
  *
- * v2 will add guide-track analysis (Follow Rhythm feature).
- * v3 will add the 2-D complexity/energy matrix from GarageBand's XY pad.
+ * When the host transport is running, the in-pattern position is derived from
+ * the host's ppq position each block (B3) so the drummer locks to the DAW bar
+ * line; otherwise it free-runs from an internal sample counter (Standalone, or
+ * a stopped transport).
  */
 class AdaptiveDrummer
 {
@@ -25,6 +27,10 @@ public:
     void setBpm     (double bpm);
     void setDensity (DrumPattern::Density density);
 
+    /** Host transport state for the next block. When playing, the in-pattern
+        position is taken from ppqPosition; otherwise the drummer free-runs. */
+    void setHostTimeline (bool isPlaying, double ppqPosition) noexcept;
+
     bool loadSamples    (const juce::File& salamanderRoot);
     bool areSamplesLoaded() const noexcept { return drumSampler.areSamplesLoaded(); }
 
@@ -35,6 +41,12 @@ public:
     DrumPattern::Style   getStyle()   const noexcept { return drumPattern.getStyle(); }
     DrumPattern::Density getDensity() const noexcept { return drumPattern.getDensity(); }
 
+    /** Map a host ppq position to a sample offset within a one-bar pattern.
+        Exposed (and static) for testing. beatsPerBar matches the pattern length
+        (4 quarter-note beats). Result is always in [0, patternLen). */
+    static int ppqToPlayhead (double ppqPosition, int patternLenSamples,
+                              double beatsPerBar = 4.0) noexcept;
+
 private:
     DrumPattern drumPattern;
     DrumSampler drumSampler;
@@ -42,6 +54,9 @@ private:
     double bpm               { 120.0 };
     double currentSampleRate { 44100.0 };
     int    playheadSample    { 0 };
+
+    bool   hostIsPlaying     { false };
+    double hostPpqPosition   { 0.0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdaptiveDrummer)
 };

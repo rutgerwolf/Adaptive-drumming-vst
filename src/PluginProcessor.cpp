@@ -100,14 +100,25 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     buffer.clear();   // safe now — the guide has already been analysed
 
-    // BPM: host playhead takes priority over manual parameter
-    double bpm = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
+    // Host transport: BPM takes priority over the manual parameter, and when the
+    // transport is rolling the ppq position locks the drummer to the DAW timeline.
+    double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
+    bool   hostPlaying = false;
+    double hostPpq     = 0.0;
     if (auto* playHead = getPlayHead())
         if (auto pos = playHead->getPosition())
+        {
             if (auto hostBpm = pos->getBpm())
                 bpm = *hostBpm;
+            if (auto ppq = pos->getPpqPosition())
+            {
+                hostPpq     = *ppq;
+                hostPlaying = pos->getIsPlaying();
+            }
+        }
     currentBpm = bpm;
     drummer.setBpm (bpm);
+    drummer.setHostTimeline (hostPlaying, hostPpq);
 
     drummer.setStyle (static_cast<DrumPattern::Style> (
         static_cast<int> (*apvts.getRawParameterValue ("style"))));
