@@ -72,6 +72,8 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
+    void autoLoadSamples();
+
     AdaptiveDrummer  drummer;
     EnergyAnalyzer   energyAnalyzer;
     double           currentBpm          { 120.0 };

@@ -1,6 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+// Where the last successfully-loaded sample folder is remembered in plugin state.
+static const juce::Identifier kSamplesPathId { "samplesPath" };
+
 // ── Parameter layout ──────────────────────────────────────────────────────────
 
 juce::AudioProcessorValueTreeState::ParameterLayout
@@ -63,13 +66,7 @@ void AdaptiveDrummerProcessor::prepareToPlay (double sampleRate, int samplesPerB
     drummer.prepare (sampleRate, samplesPerBlock);
     energyAnalyzer.prepare (sampleRate, samplesPerBlock);
 
-    // Auto-load samples from next to the executable (works for Standalone)
-    if (! drummer.areSamplesLoaded())
-    {
-        const auto appDir = juce::File::getSpecialLocation (
-            juce::File::currentApplicationFile).getParentDirectory();
-        drummer.loadSamples (appDir.getChildFile ("assets/samples/salamander"));
-    }
+    autoLoadSamples();
 }
 
 void AdaptiveDrummerProcessor::releaseResources()
@@ -142,14 +139,52 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
+        {
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+            // Re-load the kit this session was saved with.
+            const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();
+            if (remembered.isNotEmpty())
+                drummer.loadSamples (juce::File (remembered));
+        }
 }
 
 // ── Samples ───────────────────────────────────────────────────────────────────
 
 bool AdaptiveDrummerProcessor::loadSamples (const juce::File& samplesRoot)
 {
-    return drummer.loadSamples (samplesRoot);
+    const bool ok = drummer.loadSamples (samplesRoot);
+    if (ok)
+        apvts.state.setProperty (kSamplesPathId, samplesRoot.getFullPathName(), nullptr);
+    return ok;
+}
+
+// Resolve and load a kit off the audio thread, without forcing the user to
+// re-pick it every session: a folder remembered in saved state first, then
+// assets shipped next to the plugin binary or the host/standalone executable.
+void AdaptiveDrummerProcessor::autoLoadSamples()
+{
+    if (drummer.areSamplesLoaded())
+        return;
+
+    juce::Array<juce::File> candidates;
+
+    const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();
+    if (remembered.isNotEmpty())
+        candidates.add (juce::File (remembered));
+
+    for (auto loc : { juce::File::currentExecutableFile,     // the plugin binary
+                      juce::File::currentApplicationFile })   // the host / standalone
+        candidates.add (juce::File::getSpecialLocation (loc)
+                            .getParentDirectory()
+                            .getChildFile ("assets/samples/salamander"));
+
+    for (const auto& dir : candidates)
+        if (dir.isDirectory() && drummer.loadSamples (dir))
+        {
+            apvts.state.setProperty (kSamplesPathId, dir.getFullPathName(), nullptr);
+            return;
+        }
 }
 
 bool AdaptiveDrummerProcessor::areSamplesLoaded () const
