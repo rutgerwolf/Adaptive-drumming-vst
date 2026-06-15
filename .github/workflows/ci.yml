@@ -12,9 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  VST3_REL: AdaptiveDrummer_artefacts/Release/VST3/Adaptive Drummer.vst3
+  PLUGINVAL_ARGS: --strictness-level 10 --random-seed 1 --validate-in-process
+
 jobs:
-  linux-build-and-test:
-    name: Linux · build & unit tests
+  linux:
+    name: Linux · build, tests & pluginval
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +33,7 @@ jobs:
           sudo apt-get install -y \
             libfreetype-dev libfontconfig1-dev libx11-dev libxext-dev \
             libxinerama-dev libxrandr-dev libxcursor-dev libxcomposite-dev \
-            libasound2-dev libgl1-mesa-dev ninja-build
+            libasound2-dev libgl1-mesa-dev ninja-build xvfb
 
       - name: Cache compiled objects (ccache)
         uses: hendrikmuhs/ccache-action@v1.2
@@ -49,3 +53,38 @@ jobs:
 
       - name: Run unit tests
         run: ctest --test-dir build --output-on-failure
+
+      - name: Validate VST3 (pluginval)
+        run: |
+          curl -fsSL https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip -o pluginval.zip
+          unzip -o pluginval.zip
+          chmod +x pluginval
+          xvfb-run -a ./pluginval $PLUGINVAL_ARGS --validate "build/$VST3_REL"
+
+  windows:
+    name: Windows · build, tests & pluginval
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout (with JUCE submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DADAPTIVE_DRUMMER_BUILD_TESTS=ON
+
+      - name: Build (plugin + tests)
+        run: cmake --build build --config Release --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Validate VST3 (pluginval)
+        shell: pwsh
+        run: |
+          curl.exe -L https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -o pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pluginval_dir -Force
+          $pv = (Get-ChildItem -Recurse pluginval_dir -Filter pluginval.exe | Select-Object -First 1).FullName
+          & $pv --strictness-level 10 --random-seed 1 --validate-in-process --skip-gui-tests --validate "build/$env:VST3_REL"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

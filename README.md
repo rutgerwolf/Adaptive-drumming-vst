@@ -187,7 +187,9 @@ ctest --test-dir build --output-on-failure
 ```
 
 To skip building the tests, configure with `-DADAPTIVE_DRUMMER_BUILD_TESTS=OFF`.
-The same build + test flow runs on every push via `.github/workflows/ci.yml`.
+CI (`.github/workflows/ci.yml`) runs on every push: it builds the plugin and
+tests on **Linux and Windows**, runs the unit tests, and validates the built
+VST3 with [pluginval](https://github.com/Tracktion/pluginval) (strictness 10).
 
 ---
 
@@ -210,7 +212,9 @@ salamander\
 ```
 
 Alternatively, click **Load samples…** in the plugin UI and point it at any folder
-that follows the layout above.
+that follows the layout above. The chosen folder is **remembered in the plugin
+state**, so it is reloaded automatically when you reopen the session or the
+plugin — you only need to pick it once.
 
 ---
 

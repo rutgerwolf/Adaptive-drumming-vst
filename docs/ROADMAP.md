@@ -27,7 +27,7 @@ Standalone; verified to compile against JUCE master and render its editor headle
 In short: the plugin now lives up to its name. The two high-priority audio
 bugs are fixed, a regression-test net + CI guards the timing maths, and the
 **adaptive Follow feature** (Phase 3) is in. Remaining work is correctness
-polish (B3 ppq sync, A1 sample path) and musicality (Phase 4).
+polish (B3 ppq sync) and musicality (Phase 4).
 
 ---
 
@@ -79,12 +79,12 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Correctness / API
 
-- **A1 · Med — VST3 sample auto-load path is wrong.**
-  `prepareToPlay` resolves samples relative to `File::currentApplicationFile`
-  (`src/PluginProcessor.cpp:56`). In a DAW that is the **host** executable, not the
-  plugin bundle, so auto-load only works for Standalone. **Fix:** resolve relative
-  to the plugin module, or use a user/app-data location, or remember the
-  last-used folder in plugin state.
+- **A1 · Med — ✅ FIXED — VST3 sample auto-load path.**
+  `prepareToPlay` used to resolve samples relative to `File::currentApplicationFile`
+  (the host exe in a DAW), so auto-load only worked for Standalone. Now the last
+  successfully-loaded folder is remembered in plugin state and reloaded on restore,
+  and `autoLoadSamples()` tries that folder first, then assets next to the plugin
+  binary (`currentExecutableFile`), then next to the host/standalone exe.
 
 - **A2 · Low — pattern rebuilt every block.**
   `processBlock` calls `setStyle`/`setDensity` unconditionally
@@ -121,7 +121,7 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ### Phase 2 — Correctness & robustness
 1. ✅ Fixed the two **High** items: **B1** (sample gaps) and **C1** (load race).
-2. ⏳ **B3** (host ppq sync) and **A1** (VST3 sample path) — still open.
+2. ✅ **A1** (VST3 sample path + remembered kit) fixed. ⏳ **B3** (host ppq sync) still open.
 3. ✅ Added `DrumPatternTest`, `DrumSamplerTest` (with a B1 regression) and
    `EnergyAnalyzerTest`, plus **GitHub Actions CI** (Linux build + tests).
 4. ⏳ **D1**: velocity-layers-vs-docs — still open.
@@ -152,12 +152,10 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 
 ## 4. Suggested next steps
 
-_B1, C1, the test/CI net and Phase 3 (Follow mode) are done. Remaining:_
+_B1, C1, A1, the test/CI net (Linux + Windows build, tests, pluginval) and
+Phase 3 (Follow mode) are done. Remaining:_
 
 1. **B3** — derive the step index from host `ppqPosition` so the drummer locks to
    the DAW timeline (also subsumes B4's truncation drift).
-2. **A1** — resolve the auto-load sample path relative to the plugin module / a
-   user location, and remember the last-used folder in plugin state.
-3. **D1** — implement per-step velocity/accents (Phase 4) or correct the README.
-4. **Windows CI** job to mirror the Linux one (the product's primary platform).
-5. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.
+2. **D1** — implement per-step velocity/accents (Phase 4) or correct the README.
+3. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.
