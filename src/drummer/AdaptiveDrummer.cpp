@@ -11,6 +11,7 @@ void AdaptiveDrummer::prepare (double sampleRate, int /*blockSize*/)
 {
     currentSampleRate = sampleRate;
     drumSampler.prepare (sampleRate);
+    drumSynth.prepare (sampleRate);
     reset();
 }
 
@@ -18,6 +19,7 @@ void AdaptiveDrummer::reset()
 {
     playheadSample = 0;
     drumSampler.reset();
+    drumSynth.reset();
 }
 
 void AdaptiveDrummer::setStyle (DrumPattern::Style style)
@@ -69,8 +71,12 @@ void AdaptiveDrummer::processBlock (juce::AudioBuffer<float>& outBuffer, int num
     if (hostIsPlaying && patternLen > 0)
         playheadSample = ppqToPlayhead (hostPpqPosition, patternLen);
 
-    drumSampler.processBlock (outBuffer, numSamples, currentSampleRate,
-                              drumPattern, bpm, playheadSample);
+    if (useSynth)
+        drumSynth.processBlock (outBuffer, numSamples, currentSampleRate,
+                                drumPattern, bpm, playheadSample);
+    else
+        drumSampler.processBlock (outBuffer, numSamples, currentSampleRate,
+                                  drumPattern, bpm, playheadSample);
 
     // Advance the free-running counter (used when the host isn't playing; when
     // it is, the next block overwrites this from ppq anyway).

@@ -1,4 +1,5 @@
 #include "DrumSampler.h"
+#include "DrumStepClock.h"
 
 #include <utility>
 
@@ -66,29 +67,8 @@ void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
     const juce::SpinLock::ScopedTryLockType sl (sampleLock);
     if (! sl.isLocked()) return;
 
-    const int patternLen = pattern.getLengthInSamples (bpm, sampleRate);
-    if (patternLen <= 0) return;
-
-    const int stepLen = patternLen / DrumPattern::kSteps;
-    if (stepLen <= 0) return;
-
-    for (int offset = 0; offset < numSamples; ++offset)
-    {
-        const int posInPattern = (playheadSample + offset) % patternLen;
-
-        if (posInPattern % stepLen == 0)
-        {
-            const int     step = posInPattern / stepLen;
-            const uint8_t mask = pattern.getStep (step);
-
-            if (mask & DrumPattern::Kick)  triggerVoice (0, offset);
-            if (mask & DrumPattern::Snare) triggerVoice (1, offset);
-            if (mask & DrumPattern::HiHat) triggerVoice (2, offset);
-            if (mask & DrumPattern::Crash) triggerVoice (3, offset);
-            if (mask & DrumPattern::Ride)  triggerVoice (4, offset);
-            if (mask & DrumPattern::Tom)   triggerVoice (5, offset);
-        }
-    }
+    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate,
+                        [this] (int voice, int offset) { triggerVoice (voice, offset); });
 
     mixVoices (outBuffer, numSamples);
 }

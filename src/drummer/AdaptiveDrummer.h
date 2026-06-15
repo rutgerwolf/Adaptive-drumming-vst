@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "DrumPattern.h"
 #include "DrumSampler.h"
+#include "DrumSynth.h"
 
 /**
  * AdaptiveDrummer
@@ -27,6 +28,11 @@ public:
     void setBpm     (double bpm);
     void setDensity (DrumPattern::Density density);
 
+    /** Choose the sound source: synthesised voices (no samples needed) or the
+        WAV sampler. */
+    void setUseSynth (bool shouldUseSynth) noexcept { useSynth = shouldUseSynth; }
+    bool isUsingSynth() const noexcept { return useSynth; }
+
     /** Host transport state for the next block. When playing, the in-pattern
         position is taken from ppqPosition; otherwise the drummer free-runs. */
     void setHostTimeline (bool isPlaying, double ppqPosition) noexcept;
@@ -50,7 +56,9 @@ public:
 private:
     DrumPattern drumPattern;
     DrumSampler drumSampler;
+    DrumSynth   drumSynth;
 
+    bool   useSynth          { true };   // default: audible without samples
     double bpm               { 120.0 };
     double currentSampleRate { 44100.0 };
     int    playheadSample    { 0 };
