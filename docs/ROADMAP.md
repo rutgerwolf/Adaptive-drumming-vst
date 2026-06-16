@@ -15,12 +15,12 @@ Standalone; verified to compile against JUCE master and render its editor headle
 
 | Area | State |
 |---|---|
-| Plugin scaffold | Complete — APVTS params, state save/restore, stereo out + sidechain in |
+| Plugin scaffold | Complete — APVTS params, state save/restore, stereo in/out effect |
 | UI | Complete — 420×384 editor: style/density/follow/sound buttons, energy meter, BPM, volume, sample loader |
 | Pattern engine | Basic — 3 styles × 3 densities, 16-step bitmask grid, 1 bar |
 | Sound sources | **Synth** (built-in procedural voices, default) **or Samples** (Salamander WAV) |
 | Host sync | **BPM + ppq** — locks to the DAW bar line when playing (B3) |
-| "Adaptive" behaviour | **Follow mode** — density tracks guide-track energy via a sidechain input |
+| "Adaptive" behaviour | **Follow mode** — density tracks the energy of the effect's input (guide) |
 | Tests | JUCE UnitTest suite (DrumPattern, DrumSampler, EnergyAnalyzer, AdaptiveDrummer, DrumSynth) via CTest |
 | CI | GitHub Actions — Linux + Windows build, tests, and pluginval |
 
@@ -134,7 +134,7 @@ Priorities: **High** = audible/crash risk, fix first · **Med** = correctness/UX
 1. ✅ New `EnergyAnalyzer`, **written fresh** for the plugin's audio-thread
    context (winband used only as a conceptual reference): guide RMS → dB →
    attack/release envelope → 0..1 energy.
-2. ✅ Added a **Sidechain** input bus; the guide is analysed every block.
+2. ✅ The effect's audio input is the guide; it is analysed every block.
 3. ✅ Energy → density with a hysteresis band; a **Follow** toggle switches
    between manual and adaptive density, and the UI shows a live energy meter.
 
@@ -164,9 +164,9 @@ share one step-trigger clock (`DrumStepClock.h`) for identical timing.
 
 _B1, C1, A1, B3, A3, the **Synth** sound source, a Standalone **Play/Stop**
 transport, the test/CI net (Linux + Windows build, tests, pluginval) and Phase 3
-(Follow mode) are done. Note: this is an *instrument* plugin, so effect-only hosts
-(e.g. Adobe Audition) will not list it — use an instrument host or the Standalone.
-Remaining:_
+(Follow mode) are done. The plugin is an **audio effect / generator** (`Fx|Instrument`),
+so it loads in effect hosts including Adobe Audition's Effects Rack; insert it on a
+track (the track audio is the Follow guide). Remaining:_
 
 1. **Standalone tempo control** — the BPM display is read-only; add an editable
    tempo for the Standalone (it currently runs at the `bpm` parameter, default 120).

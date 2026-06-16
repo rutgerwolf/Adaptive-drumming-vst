@@ -20,12 +20,12 @@ juce_add_plugin(AdaptiveDrummer
     PRODUCT_NAME              "Adaptive Drummer"
     COMPANY_NAME              "WinBand Project"
     BUNDLE_ID                 "nl.winband.adaptive-drummer"
-    IS_SYNTH                  TRUE
+    IS_SYNTH                  FALSE
     NEEDS_MIDI_INPUT          FALSE
     NEEDS_MIDI_OUTPUT         FALSE
     IS_MIDI_EFFECT            FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    VST3_CATEGORIES           "Instrument|Drums"
+    VST3_CATEGORIES           "Fx|Instrument"
 )
 
 target_sources(AdaptiveDrummer PRIVATE
