@@ -45,6 +45,26 @@ public:
             expectEquals (AdaptiveDrummer::ppqToPlayhead (1.0, 0), 0);
             expectEquals (AdaptiveDrummer::ppqToPlayhead (1.0, 88200, 0.0), 0);
         }
+
+        beginTest ("synth free-run produces audio (no samples needed)");
+        {
+            AdaptiveDrummer d;
+            d.prepare (44100.0, 512);
+            d.setUseSynth (true);
+            d.setStyle (DrumPattern::Style::Rock);
+            d.setDensity (DrumPattern::Density::Full);
+            d.setHostTimeline (false, 0.0);   // free-run, as in Standalone
+
+            juce::AudioBuffer<float> buf (2, 512);
+            float peak = 0.0f;
+            for (int b = 0; b < 200; ++b)     // ~2.3 s, several bars
+            {
+                buf.clear();
+                d.processBlock (buf, 512);
+                peak = juce::jmax (peak, buf.getMagnitude (0, 512));
+            }
+            expectGreaterThan (peak, 0.01f);  // the synth must actually sound
+        }
     }
 };
 

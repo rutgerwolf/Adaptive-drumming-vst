@@ -5,7 +5,7 @@
 #include <atomic>
 
 /**
- * EnergyAnalyzer — turns an incoming guide/sidechain signal into a smoothed
+ * EnergyAnalyzer — turns an incoming guide signal into a smoothed
  * 0..1 "energy" value and an adaptive density.
  *
  * This is a fresh implementation written for the plugin's audio-thread context

@@ -34,6 +34,9 @@ AdaptiveDrummerProcessor::createParameterLayout()
         juce::ParameterID { "source", 1 }, "Sound",
         juce::StringArray { "Synth", "Samples" }, 0));
 
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "play", 1 }, "Play", false));
+
     return layout;
 }
 
@@ -41,8 +44,8 @@ AdaptiveDrummerProcessor::createParameterLayout()
 
 AdaptiveDrummerProcessor::AdaptiveDrummerProcessor()
     : AudioProcessor (BusesProperties()
-          .withOutput ("Output",    juce::AudioChannelSet::stereo(), true)
-          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), true)),
+          .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "AdaptiveDrummer", createParameterLayout())
 {}
 
@@ -52,15 +55,14 @@ AdaptiveDrummerProcessor::~AdaptiveDrummerProcessor() = default;
 
 bool AdaptiveDrummerProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // Main output must be stereo.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    const auto out = layouts.getMainOutputChannelSet();
+    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
         return false;
 
-    // The guide/sidechain input is optional: disabled, mono, or stereo.
-    const auto sidechain = layouts.getChannelSet (true, 0);
-    return sidechain.isDisabled()
-        || sidechain == juce::AudioChannelSet::mono()
-        || sidechain == juce::AudioChannelSet::stereo();
+    // In-place effect: the input (the host track / guide) matches the output,
+    // or is absent for generator-only hosts.
+    const auto in = layouts.getMainInputChannelSet();
+    return in.isDisabled() || in == out;
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -88,44 +90,44 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 {
     juce::ScopedNoDenormals noDenormals;
 
-    auto       mainOut    = getBusBuffer (buffer, false, 0);
+    auto       mainOut    = getBusBuffer (buffer, false, 0);  // in-place: holds the input on entry
     const int  numSamples = buffer.getNumSamples();
     const bool follow     = *apvts.getRawParameterValue ("follow") > 0.5f;
 
-    // Analyse the guide/sidechain signal BEFORE clearing the buffer.
+    // This is a generator effect: the host track feeding it is the guide. Analyse
+    // that incoming audio BEFORE the buffer is overwritten with drums.
     if (follow)
-    {
-        if (auto* in = getBus (true, 0); in != nullptr && in->isEnabled())
-            energyAnalyzer.processBlock (getBusBuffer (buffer, true, 0), numSamples);
-        else
-            energyAnalyzer.processSilence (numSamples);
-    }
+        energyAnalyzer.processBlock (mainOut, numSamples);
     else
-    {
         energyAnalyzer.processSilence (numSamples);   // let the meter fall back
-    }
 
-    buffer.clear();   // safe now — the guide has already been analysed
+    buffer.clear();   // output is the generated drums (input is the guide, now analysed)
 
     // Host transport: BPM takes priority over the manual parameter, and when the
     // transport is rolling the ppq position locks the drummer to the DAW timeline.
+    // Standalone has no meaningful transport, so we ignore its playhead there and
+    // let the Play button drive playback instead.
     double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
     bool   hostPlaying = false;
     double hostPpq     = 0.0;
-    if (auto* playHead = getPlayHead())
-        if (auto pos = playHead->getPosition())
-        {
-            if (auto hostBpm = pos->getBpm())
-                bpm = *hostBpm;
-            if (auto ppq = pos->getPpqPosition())
+    if (wrapperType != wrapperType_Standalone)
+        if (auto* playHead = getPlayHead())
+            if (auto pos = playHead->getPosition())
             {
-                hostPpq     = *ppq;
-                hostPlaying = pos->getIsPlaying();
+                if (auto hostBpm = pos->getBpm())
+                    bpm = *hostBpm;
+                if (auto ppq = pos->getPpqPosition())
+                {
+                    hostPpq     = *ppq;
+                    hostPlaying = pos->getIsPlaying();
+                }
             }
-        }
     currentBpm = bpm;
     drummer.setBpm (bpm);
     drummer.setHostTimeline (hostPlaying, hostPpq);
+
+    // Play when the user's Play toggle is on, or the host transport is rolling.
+    const bool playing = *apvts.getRawParameterValue ("play") > 0.5f || hostPlaying;
 
     drummer.setStyle (static_cast<DrumPattern::Style> (
         static_cast<int> (*apvts.getRawParameterValue ("style"))));
@@ -141,8 +143,11 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     drummer.setDensity (density);
     currentDensityState.store (static_cast<int> (density), std::memory_order_relaxed);
 
-    // Generate drums into the main output bus.
-    drummer.processBlock (mainOut, numSamples);
+    // Generate drums into the main output bus (silence + rewind when stopped).
+    if (playing)
+        drummer.processBlock (mainOut, numSamples);
+    else
+        drummer.reset();
 
     // Volume — smoothed to avoid zipper noise when the knob moves (A3).
     volumeSmoothed.setTargetValue (*apvts.getRawParameterValue ("volume"));

@@ -16,7 +16,7 @@ own tempo when used as a standalone application.
 | Styles | Rock, Jazz, Electronic |
 | Pattern densities | Sparse, Medium, Full |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
-| Adaptive density | **Follow** mode maps the energy of a guide track (sidechain input) to density |
+| Adaptive density | **Follow** mode maps the energy of the input/guide track to density |
 | BPM sync | Reads host transport; falls back to own BPM parameter |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
@@ -28,7 +28,7 @@ own tempo when used as a standalone application.
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  ADAPTIVE DRUMMER                                   │
+│  ADAPTIVE DRUMMER                          [ Play ] │
 ├─────────────────────────────────────────────────────┤
 │  Style   [ Rock ]  [ Jazz ]  [ Electronic ]         │
 │  Density [ Sparse ] [ Medium ] [ Full ]             │
@@ -46,8 +46,9 @@ own tempo when used as a standalone application.
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
+- **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
 - **Density row** — radio buttons (group 2); controls how many hits are placed per bar. Disabled while **Follow** is on (density is then automatic).
-- **Follow toggle** — when on, the density tracks the guide-track energy on the sidechain input instead of the manual density buttons.
+- **Follow toggle** — when on, the density tracks the energy of the track feeding the effect instead of the manual density buttons.
 - **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM display** — read-only label, refreshed at 10 Hz from the processor. Shows host BPM when a DAW transport is active.
@@ -55,6 +56,28 @@ own tempo when used as a standalone application.
 - **Load samples…** — opens a folder chooser; expects the Salamander layout described below.
 
 ---
+
+## Host compatibility
+
+Adaptive Drummer is built as an **audio effect / generator** (VST3 category `Fx|Instrument`),
+so it loads anywhere effects do — including **Adobe Audition's Effects Rack**, and on audio
+tracks in Reaper, Ableton Live, Cubase, FL Studio, Bitwig — or run the **Standalone** app and
+press **Play**.
+
+Insert it on a track: it **outputs the generated drums**. With **Follow** on, the track's
+incoming audio is the guide (louder/busier → fuller pattern). Put it on a dedicated track for a
+pure drum machine, or on a part you want it to react to for adaptive density.
+
+> Some Adobe hosts have a known VST3 quirk where the custom editor may not render (you get
+> generic parameter sliders). It still loads and plays.
+
+**Packaging (per the VST3 spec).** A VST3 is a **bundle — a folder, not a single file**; the
+single-file `.vst3` DLL was *deprecated in VST 3.6.10*. The real binary lives at
+`Adaptive Drummer.vst3/Contents/<arch>/Adaptive Drummer.vst3` (`x86_64-win` on Windows)
+alongside `Contents/Resources/moduleinfo.json`. Copy the whole `Adaptive Drummer.vst3` folder
+into your VST3 path (`%COMMONPROGRAMFILES%\VST3` on Windows) and rescan — the "several files in
+a nested folder" layout is correct and required.
+
 
 ## Parameters (APVTS)
 
@@ -66,6 +89,7 @@ own tempo when used as a standalone application.
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
 | `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
+| `play` | Bool | off · on | off | Transport: generate drums (also driven by the host transport) |
 
 All parameters are automatable and saved with the DAW session.
 
@@ -88,7 +112,7 @@ Style, density and Follow behave the same in both modes.
 
 ## Adaptive "Follow" mode
 
-The plugin exposes a **Sidechain** input bus (the *guide track*). With **Follow**
+This is a generator effect, so its **audio input is the guide track**. With **Follow**
 enabled, the incoming guide audio is analysed every block and its energy drives
 the pattern density automatically:
 
@@ -97,13 +121,13 @@ the pattern density automatically:
   density rises and falls smoothly instead of chattering at the thresholds.
 
 Route the part you want the drummer to react to (a vocal, a guitar, a full mix)
-into the plugin's sidechain input and turn **Follow** on. Louder/busier guide ->
-fuller pattern; quieter guide -> sparser pattern. With Follow off, the sidechain
+into the track that feeds this effect and turn **Follow** on. Louder/busier guide ->
+fuller pattern; quieter guide -> sparser pattern. With Follow off, the input
 is ignored and the manual **Density** buttons are used. The `style` stays manual
 in both modes.
 
-> In a DAW, assign a send/bus to the plugin's *Sidechain* input. The bus is
-> optional - when it is disabled or silent the energy falls to zero (Sparse).
+> Put the effect on the track whose audio should steer the drums. When the input
+> is silent the energy falls to zero (Sparse).
 
 ---
 
@@ -247,7 +271,7 @@ Adaptive-drumming-vst\
 ├── assets\
 │   └── samples\salamander\           # Salamander Drumkit (not in repo)
 ├── src\
-│   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, sidechain, state I/O
+│   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, transport, state I/O
 │   ├── PluginEditor.h/.cpp           # 420×340 UI (incl. Follow + energy meter)
 │   └── drummer\
 │       ├── AdaptiveDrummer.h/.cpp    # Orchestrator

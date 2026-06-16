@@ -11,8 +11,9 @@
  * JUCE AudioProcessor wrapping AdaptiveDrummer v1.
  * Reads host BPM from the DAW playhead; falls back to the "bpm" parameter.
  *
- * When "follow" is on, the density follows the energy of the guide signal on
- * the sidechain input bus instead of the manual "density" parameter.
+ * Built as an audio effect / generator: it outputs drums, and when "follow" is on
+ * the density tracks the energy of the incoming audio (the host track / guide)
+ * instead of the manual "density" parameter.
  *
  * Parameters (managed by apvts):
  *   bpm      float  40-240  default 120   manual BPM (ignored when host provides tempo)
