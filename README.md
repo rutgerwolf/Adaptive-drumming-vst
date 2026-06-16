@@ -1,6 +1,7 @@
 # Adaptive Drummer
 
-A JUCE-based adaptive drum machine plugin (VST3 + Standalone), spun off from the
+A JUCE-based adaptive drum machine — an audio **effect/generator** plugin
+(VST3 + Standalone), spun off from the
 [WinBand](https://github.com/rutgerwolf/winband) project.
 
 Adaptive Drummer generates rhythmic drum patterns that match a playing style and
@@ -17,7 +18,7 @@ own tempo when used as a standalone application.
 | Pattern densities | Sparse, Medium, Full |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
 | Adaptive density | **Follow** mode maps the energy of the input/guide track to density |
-| BPM sync | Reads host transport; falls back to own BPM parameter |
+| BPM / tempo | Reads host transport; **editable BPM** (double-click) otherwise |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
 | Formats | VST3, Standalone |
@@ -35,7 +36,7 @@ own tempo when used as a standalone application.
 │  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
 │  Sound   [ Synth ] [ Samples ]                      │
 ├─────────────────────────────────────────────────────┤
-│  BPM  120.0  (synced to host)                       │
+│  BPM  120.0  (type to set)                          │
 │                                                     │
 │  Volume ◎                                           │
 ├─────────────────────────────────────────────────────┤
@@ -194,15 +195,16 @@ cmake --build build --config Release
 
 | Artifact | Path |
 |---|---|
-| VST3 plugin | `build\AdaptiveDrummer_artefacts\Release\VST3\AdaptiveDrummer.vst3` |
-| Standalone app | `build\AdaptiveDrummer_artefacts\Release\Standalone\AdaptiveDrummer.exe` |
+| VST3 plugin (a bundle **folder**) | `build\AdaptiveDrummer_artefacts\Release\VST3\Adaptive Drummer.vst3\` |
+| Standalone app | `build\AdaptiveDrummer_artefacts\Release\Standalone\Adaptive Drummer.exe` |
 
 ### Step 5 — Install the VST3
 
-Copy `AdaptiveDrummer.vst3` to your DAW’s VST3 scan folder:
+Copy the whole `Adaptive Drummer.vst3` **folder** (it is a bundle, not a single
+file) to your DAW’s VST3 scan folder:
 
 ```bat
-xcopy /E /I build\AdaptiveDrummer_artefacts\Release\VST3\AdaptiveDrummer.vst3 "%COMMONPROGRAMFILES%\VST3\AdaptiveDrummer.vst3"
+xcopy /E /I "build\AdaptiveDrummer_artefacts\Release\VST3\Adaptive Drummer.vst3" "%COMMONPROGRAMFILES%\VST3\Adaptive Drummer.vst3"
 ```
 
 Then rescan plugins in your DAW.
@@ -230,8 +232,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 To skip building the tests, configure with `-DADAPTIVE_DRUMMER_BUILD_TESTS=OFF`.
-CI (`.github/workflows/ci.yml`) runs on every push: it builds the plugin and
-tests on **Linux and Windows**, runs the unit tests, and validates the built
+CI (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests:
+it builds on **Linux and Windows**, runs the unit tests, and validates the built
 VST3 with [pluginval](https://github.com/Tracktion/pluginval) (strictness 10).
 
 ---
@@ -267,16 +269,18 @@ plugin — you only need to pick it once.
 Adaptive-drumming-vst\
 ├── CMakeLists.txt                    # JUCE plugin target + unit-test target
 ├── .gitmodules                       # JUCE submodule
-├── .github\workflows\ci.yml          # Linux build + tests (CI)
+├── .github\workflows\ci.yml          # CI: Linux + Windows build, tests, pluginval
 ├── assets\
 │   └── samples\salamander\           # Salamander Drumkit (not in repo)
 ├── src\
 │   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, transport, state I/O
-│   ├── PluginEditor.h/.cpp           # 420×340 UI (incl. Follow + energy meter)
+│   ├── PluginEditor.h/.cpp           # 420×384 UI (incl. Follow + energy meter)
 │   └── drummer\
 │       ├── AdaptiveDrummer.h/.cpp    # Orchestrator
 │       ├── DrumPattern.h/.cpp        # 16-step bitmask grid
+│       ├── DrumStepClock.h           # Sample-accurate step timing
 │       ├── DrumSampler.h/.cpp        # WAV loader + playback
+│       ├── DrumSynth.h/.cpp          # Built-in procedural drum voices
 │       └── EnergyAnalyzer.h/.cpp     # Guide-track energy → adaptive density
 ├── tests\                            # JUCE UnitTest suite (run via CTest)
 └── third_party\
