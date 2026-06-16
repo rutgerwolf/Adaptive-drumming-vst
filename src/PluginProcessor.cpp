@@ -108,6 +108,7 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Standalone has no meaningful transport, so we ignore its playhead there and
     // let the Play button drive playback instead.
     double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
+    bool   fromHost    = false;
     bool   hostPlaying = false;
     double hostPpq     = 0.0;
     if (wrapperType != wrapperType_Standalone)
@@ -115,14 +116,18 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (auto pos = playHead->getPosition())
             {
                 if (auto hostBpm = pos->getBpm())
-                    bpm = *hostBpm;
+                {
+                    bpm      = *hostBpm;
+                    fromHost = true;
+                }
                 if (auto ppq = pos->getPpqPosition())
                 {
                     hostPpq     = *ppq;
                     hostPlaying = pos->getIsPlaying();
                 }
             }
-    currentBpm = bpm;
+    currentBpm  = bpm;
+    bpmFromHost = fromHost;
     drummer.setBpm (bpm);
     drummer.setHostTimeline (hostPlaying, hostPpq);
 
