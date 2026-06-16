@@ -166,11 +166,10 @@ _B1, C1, A1, B3, A3, the **Synth** sound source, a Standalone **Play/Stop**
 transport, the test/CI net (Linux + Windows build, tests, pluginval) and Phase 3
 (Follow mode) are done. The plugin is an **audio effect / generator** (`Fx|Instrument`),
 so it loads in effect hosts including Adobe Audition's Effects Rack; insert it on a
-track (the track audio is the Follow guide). Remaining:_
+track (the track audio is the Follow guide). The BPM field is **editable**
+(double-click to type a tempo) for Standalone use. Remaining:_
 
-1. **Standalone tempo control** — the BPM display is read-only; add an editable
-   tempo for the Standalone (it currently runs at the `bpm` parameter, default 120).
-2. **A2** — cache style/density and rebuild the pattern only on change (needed
+1. **A2** — cache style/density and rebuild the pattern only on change (needed
    before per-pattern randomisation/fills).
 3. **D1** — per-step velocity & accents (Phase 4).
 4. Phase 4 musicality: fills, humanisation, more styles, MIDI-output mode.

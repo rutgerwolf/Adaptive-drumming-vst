@@ -51,7 +51,7 @@ own tempo when used as a standalone application.
 - **Follow toggle** — when on, the density tracks the energy of the track feeding the effect instead of the manual density buttons.
 - **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
-- **BPM display** — read-only label, refreshed at 10 Hz from the processor. Shows host BPM when a DAW transport is active.
+- **BPM field** — shows the live tempo (refreshed at 10 Hz). **Double-click to type a tempo** (40–240) — this is how you set the speed in the Standalone. When a DAW transport supplies the tempo the field locks and follows the host.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
 - **Load samples…** — opens a folder chooser; expects the Salamander layout described below.
 
@@ -85,7 +85,7 @@ a nested folder" layout is correct and required.
 |---|---|---|---|---|
 | `style` | Choice | 0 Rock · 1 Jazz · 2 Electronic | 0 | Groove style |
 | `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Pattern density |
-| `bpm` | Float | 40–240 (step 0.1) | 120 | Fallback BPM (ignored when host provides one) |
+| `bpm` | Float | 40–240 (step 0.1) | 120 | Tempo; **editable in the UI** (double-click the BPM field). Host tempo overrides it when present |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
 | `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |

@@ -93,10 +93,21 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     bpmTitleLabel.setFont (juce::Font (11.0f));
     addAndMakeVisible (bpmTitleLabel);
 
-    bpmValueLabel.setColour (juce::Label::textColourId,       kText);
-    bpmValueLabel.setColour (juce::Label::backgroundColourId, kPanel);
+    bpmValueLabel.setColour (juce::Label::textColourId,          kText);
+    bpmValueLabel.setColour (juce::Label::backgroundColourId,    kPanel);
+    bpmValueLabel.setColour (juce::Label::textWhenEditingColourId, kText);
     bpmValueLabel.setJustificationType (juce::Justification::centred);
     bpmValueLabel.setFont (juce::Font (20.0f, juce::Font::bold));
+    bpmValueLabel.setEditable (false, true);   // double-click to type a tempo
+    bpmValueLabel.onTextChange = [this]
+    {
+        if (auto* p = proc.apvts.getParameter ("bpm"))
+        {
+            const auto& range = p->getNormalisableRange();
+            const float v     = range.snapToLegalValue (bpmValueLabel.getText().getFloatValue());
+            p->setValueNotifyingHost (range.convertTo0to1 (v));
+        }
+    };
     addAndMakeVisible (bpmValueLabel);
 
     // ── Volume ──────────────────────────────────────────────────────────────────
@@ -229,10 +240,14 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     const bool playing = *proc.apvts.getRawParameterValue ("play") > 0.5f;
     playButton.setButtonText (playing ? "Stop" : "Play");
 
-    // BPM display
-    bpmValueLabel.setText (
-        juce::String (proc.getCurrentBpm(), 1),
-        juce::dontSendNotification);
+    // BPM: show the live tempo and allow typing it — except when the host is
+    // driving the tempo (then the manual value would be ignored, so lock it).
+    const bool bpmFromHost = proc.isBpmFromHost();
+    if (! bpmValueLabel.isBeingEdited())
+        bpmValueLabel.setText (juce::String (proc.getCurrentBpm(), 1),
+                               juce::dontSendNotification);
+    bpmValueLabel.setEditable (false, ! bpmFromHost);
+    bpmValueLabel.setColour (juce::Label::textColourId, bpmFromHost ? kMuted : kText);
 
     // Sync style button toggle states from parameter (handles automation)
     const int style = static_cast<int> (*proc.apvts.getRawParameterValue ("style"));

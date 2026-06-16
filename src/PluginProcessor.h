@@ -57,7 +57,10 @@ public:
     bool areSamplesLoaded () const;
 
     /** BPM currently in use (host-synced or manual). Readable from the editor. */
-    double getCurrentBpm () const noexcept { return currentBpm; }
+    double getCurrentBpm () const noexcept { return currentBpm.load (std::memory_order_relaxed); }
+
+    /** True when the host is supplying the tempo (so the manual BPM has no effect). */
+    bool isBpmFromHost () const noexcept { return bpmFromHost.load (std::memory_order_relaxed); }
 
     /** Smoothed guide-track energy in [0, 1] (for the editor meter). */
     float getEnergy () const noexcept { return energyAnalyzer.getEnergy(); }
@@ -77,8 +80,9 @@ private:
 
     AdaptiveDrummer  drummer;
     EnergyAnalyzer   energyAnalyzer;
-    double           currentBpm          { 120.0 };
-    std::atomic<int> currentDensityState { static_cast<int> (DrumPattern::Density::Medium) };
+    std::atomic<double> currentBpm          { 120.0 };
+    std::atomic<bool>   bpmFromHost         { false };
+    std::atomic<int>    currentDensityState { static_cast<int> (DrumPattern::Density::Medium) };
 
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
 
