@@ -3,6 +3,9 @@
 #include "drummer/DrumPattern.h"
 
 #include <cmath>
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 /**
  * DrumSampler tests.
@@ -105,6 +108,76 @@ public:
             sampler.processBlock (block, 256, 44100.0, pattern, 120.0, 0);
 
             expectEquals (block.getMagnitude (0, 256), 0.0f);
+        }
+
+        beginTest ("C1 — concurrent kit reload never races the audio callback");
+        {
+            const double sr = 48000.0;
+            auto kitA = makeTempKitWithKick (500,  sr);
+            auto kitB = makeTempKitWithKick (3000, sr);
+
+            DrumSampler sampler;
+            sampler.prepare (sr);
+            expect (sampler.loadSamples (kitA), "kit A should load");
+
+            DrumPattern pattern;
+            pattern.loadStyle  (DrumPattern::Style::Rock);
+            pattern.setDensity (DrumPattern::Density::Full);   // dense → many triggers
+            const double bpm        = 140.0;
+            const int    patternLen = pattern.getLengthInSamples (bpm, sr);
+
+            std::atomic<bool> stop     { false };
+            std::atomic<int>  loads    { 0 };
+            std::atomic<bool> loaderOk { true };
+
+            // Loader thread hammers loadSamples() (message-thread role): it builds a
+            // new SampleSet and swaps it in under the SpinLock the audio thread only
+            // try-locks. If allocation/free ever moved under the lock or onto the
+            // audio thread, this would race and the output below would go non-finite.
+            std::thread loader ([&]
+            {
+                bool useA = false;
+                while (! stop.load (std::memory_order_relaxed))
+                {
+                    if (! sampler.loadSamples (useA ? kitA : kitB))
+                        loaderOk.store (false, std::memory_order_relaxed);
+                    loads.fetch_add (1, std::memory_order_relaxed);
+                    useA = ! useA;
+                }
+            });
+
+            const int blockSize = 256;
+            juce::AudioBuffer<float> block (2, blockSize);
+            bool allFinite = true;
+            int  playhead  = 0;
+            const auto tEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds (300);
+            while (std::chrono::steady_clock::now() < tEnd)
+            {
+                block.clear();
+                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead);
+                for (int ch = 0; ch < block.getNumChannels() && allFinite; ++ch)
+                {
+                    const float* d = block.getReadPointer (ch);
+                    for (int i = 0; i < blockSize; ++i)
+                        if (! std::isfinite (d[i])) { allFinite = false; break; }
+                }
+                playhead = (playhead + blockSize) % patternLen;
+            }
+            stop.store (true, std::memory_order_relaxed);
+            loader.join();
+
+            expect (allFinite, "audio output must stay finite during concurrent reloads");
+            expect (loaderOk.load(), "every concurrent kit load must succeed");
+            expectGreaterThan (loads.load(), 1, "loader must have swapped kits repeatedly");
+            expect (sampler.areSamplesLoaded(), "a kit remains loaded after the stress run");
+
+            // A settled render still produces finite audio.
+            block.clear();
+            sampler.processBlock (block, blockSize, sr, pattern, bpm, 0);
+            expect (std::isfinite (block.getMagnitude (0, blockSize)));
+
+            kitA.deleteRecursively();
+            kitB.deleteRecursively();
         }
     }
 

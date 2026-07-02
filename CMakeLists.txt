@@ -98,6 +98,7 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
     target_sources(AdaptiveDrummerTests PRIVATE
         tests/TestRunner.cpp
         tests/DrumPatternTest.cpp
+        tests/DrumStepClockTest.cpp
         tests/DrumSamplerTest.cpp
         tests/EnergyAnalyzerTest.cpp
         tests/AdaptiveDrummerTest.cpp
