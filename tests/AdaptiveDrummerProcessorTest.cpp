@@ -4,6 +4,25 @@
 #include <cmath>
 
 /**
+ * A host playhead that reports isPlaying=true but never supplies a ppq
+ * position — simulates a real host quirk (Fable review Finding #6): some
+ * hosts report one without the other, and treating "no ppq" as "not
+ * playing" wrongly silenced playback.
+ */
+class NoPpqPlayHead : public juce::AudioPlayHead
+{
+public:
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setIsPlaying (true);
+        info.setBpm (130.0);
+        // Deliberately no setPpqPosition() call.
+        return info;
+    }
+};
+
+/**
  * Processor-level tests for AdaptiveDrummerProcessor — a CTest net that sits
  * below pluginval (Roadmap 2D, Step 2).
  *
@@ -109,6 +128,50 @@ public:
             expect (allFinite, "every rendered sample must be finite");
             expectGreaterThan (accumulatedMagnitude, 0.0,
                                 "default Synth source must be audible while playing, even with no samples loaded");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("host isPlaying without a ppq position still produces audio (Finding #6)");
+        {
+            AdaptiveDrummerProcessor proc;
+            NoPpqPlayHead            fakePlayHead;
+            proc.setPlayHead (&fakePlayHead);
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            proc.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+            proc.prepareToPlay (sampleRate, blockSize);
+            // Note: the "play" parameter is deliberately left off — only the
+            // host's isPlaying flag should drive playback here.
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+
+            bool   allFinite            = true;
+            double accumulatedMagnitude = 0.0;
+
+            for (int b = 0; b < 64; ++b)
+            {
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+
+                for (int ch = 0; ch < buffer.getNumChannels() && allFinite; ++ch)
+                {
+                    const float* d = buffer.getReadPointer (ch);
+                    for (int i = 0; i < blockSize; ++i)
+                    {
+                        if (! std::isfinite (d[i])) { allFinite = false; break; }
+                        accumulatedMagnitude += (double) std::abs (d[i]);
+                    }
+                }
+            }
+
+            expect (allFinite, "every rendered sample must be finite");
+            expectGreaterThan (accumulatedMagnitude, 0.0,
+                                "a host reporting isPlaying without ppq must still produce audio, "
+                                "not be silently treated as stopped");
 
             proc.releaseResources();
         }
