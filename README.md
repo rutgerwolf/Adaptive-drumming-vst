@@ -5,7 +5,7 @@ A JUCE-based adaptive drum machine — an audio **effect/generator** plugin
 [WinBand](https://github.com/rutgerwolf/winband) project.
 
 Adaptive Drummer generates rhythmic drum patterns that match a playing style and
-density you select. It syncs to the host DAW's BPM automatically, or runs at its
+intensity/complexity you choose. It syncs to the host DAW's BPM automatically, or runs at its
 own tempo when used as a standalone application.
 
 ---
@@ -15,9 +15,9 @@ own tempo when used as a standalone application.
 | Feature | Details |
 |---|---|
 | Styles | Rock, Jazz, Electronic |
-| Pattern densities | Sparse, Medium, Full |
+| Groove axes | **Intensity** (dynamics) × **Complexity** (how busy) — continuous 0–1 sliders |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
-| Adaptive density | **Follow** mode maps the energy of the input/guide track to density |
+| Adaptive groove | **Follow** mode maps the energy of the input/guide track onto Intensity/Complexity |
 | BPM / tempo | Reads host transport; **editable BPM** (double-click) otherwise |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
@@ -31,8 +31,9 @@ own tempo when used as a standalone application.
 ┌─────────────────────────────────────────────────────┐
 │  ADAPTIVE DRUMMER                          [ Play ] │
 ├─────────────────────────────────────────────────────┤
-│  Style   [ Rock ]  [ Jazz ]  [ Electronic ]         │
-│  Density [ Sparse ] [ Medium ] [ Full ]             │
+│  Style      [ Rock ]  [ Jazz ]  [ Electronic ]      │
+│  Intensity  ▬▬▬▬▬▬●▬▬▬▬  0.55                       │
+│  Complexity ▬▬▬▬▬▬●▬▬▬▬  0.55                       │
 │  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
 │  Sound   [ Synth ] [ Samples ]                      │
 ├─────────────────────────────────────────────────────┤
@@ -43,14 +44,14 @@ own tempo when used as a standalone application.
 │  Samples: kick/ snare/ hihat/ crash/ ride/ tom/     │
 │  [Load samples...]                                  │
 └─────────────────────────────────────────────────────┘
-         420 × 384 px
+         420 × 416 px
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
 - **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
-- **Density row** — radio buttons (group 2); controls how many hits are placed per bar. Disabled while **Follow** is on (density is then automatic).
-- **Follow toggle** — when on, the density tracks the energy of the track feeding the effect instead of the manual density buttons.
-- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
+- **Intensity / Complexity sliders** — the 2-D groove axes: Intensity is per-hit dynamics, Complexity is how busy the pattern is. Continuous 0–1, replacing the old 3-step density buttons (a visual XY pad is a later UI pass). Disabled and shown live while **Follow** is on (then they're automatic).
+- **Follow toggle** — when on, Intensity/Complexity track the energy of the track feeding the effect instead of the manual sliders.
+- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive groove.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM field** — shows the live tempo (refreshed at 10 Hz). **Double-click to type a tempo** (40–240) — this is how you set the speed in the Standalone. When a DAW transport supplies the tempo the field locks and follows the host.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
@@ -66,8 +67,9 @@ tracks in Reaper, Ableton Live, Cubase, FL Studio, Bitwig — or run the **Stand
 press **Play**.
 
 Insert it on a track: it **outputs the generated drums**. With **Follow** on, the track's
-incoming audio is the guide (louder/busier → fuller pattern). Put it on a dedicated track for a
-pure drum machine, or on a part you want it to react to for adaptive density.
+incoming audio is the guide (louder/busier → higher intensity and complexity). Put it on a
+dedicated track for a pure drum machine, or on a part you want it to react to for an adaptive
+groove.
 
 > Some Adobe hosts have a known VST3 quirk where the custom editor may not render (you get
 > generic parameter sliders). It still loads and plays.
@@ -85,10 +87,12 @@ a nested folder" layout is correct and required.
 | ID | Type | Range | Default | Description |
 |---|---|---|---|---|
 | `style` | Choice | 0 Rock · 1 Jazz · 2 Electronic | 0 | Groove style |
-| `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Pattern density |
+| `intensity` | Float | 0–1 (step 0.01) | 0.55 | Dynamics axis — per-hit velocity (used when Follow is off) |
+| `complexity` | Float | 0–1 (step 0.01) | 0.55 | Structural axis — how busy the pattern is (used when Follow is off) |
+| `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Legacy; kept registered for parameter-ID stability. No longer read by `processBlock()`, only used to migrate a pre-2.0 saved session's `intensity`/`complexity` |
 | `bpm` | Float | 40–240 (step 0.1) | 120 | Tempo; **editable in the UI** (double-click the BPM field). Host tempo overrides it when present |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
-| `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
+| `follow` | Bool | off · on | off | Adaptive intensity/complexity from the guide track (overrides the sliders) |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
 | `play` | Bool | off · on | off | Transport: generate drums (also driven by the host transport) |
 
@@ -107,7 +111,7 @@ buttons (the `source` parameter):
 - **Samples** — plays the Salamander Drumkit WAVs (see [Samples](#samples)). Use
   this for the realistic acoustic kit; load a folder once and it is remembered.
 
-Style, density and Follow behave the same in both modes.
+Style, Intensity/Complexity and Follow behave the same in both modes.
 
 ---
 
@@ -115,17 +119,19 @@ Style, density and Follow behave the same in both modes.
 
 This is a generator effect, so its **audio input is the guide track**. With **Follow**
 enabled, the incoming guide audio is analysed every block and its energy drives
-the pattern density automatically:
+Intensity and Complexity automatically:
 
 - block RMS -> dB -> normalised to 0-1 -> attack/release envelope -> **energy**;
-- energy maps to **Sparse / Medium / Full** through a hysteresis band, so the
-  density rises and falls smoothly instead of chattering at the thresholds.
+- energy maps to a **Sparse / Medium / Full** step through a hysteresis band (so it
+  rises and falls smoothly instead of chattering at the thresholds), which is then
+  mapped onto the continuous **Intensity/Complexity** axes — the same mapping the
+  legacy `density` parameter used, so the three points land on exactly the same feel.
 
 Route the part you want the drummer to react to (a vocal, a guitar, a full mix)
 into the track that feeds this effect and turn **Follow** on. Louder/busier guide ->
-fuller pattern; quieter guide -> sparser pattern. With Follow off, the input
-is ignored and the manual **Density** buttons are used. The `style` stays manual
-in both modes.
+higher intensity and complexity; quieter guide -> sparser. With Follow off, the input
+is ignored and the manual **Intensity/Complexity** sliders are used directly. The
+`style` stays manual in both modes.
 
 > Put the effect on the track whose audio should steer the drums. When the input
 > is silent the energy falls to zero (Sparse).
@@ -136,7 +142,7 @@ in both modes.
 
 Patterns are 16-step (16th-note) grids. Voices: Kick, Snare, HiHat, Crash, Ride, Tom.
 
-| Style | Sparse | Medium | Full |
+| Style | Low complexity | Medium | Full complexity |
 |---|---|---|---|
 | Rock | Four-on-the-floor + backbeat | + open hi-hat | + fills |
 | Jazz | Ride pulse + rim | + brush hi-hat | + ride variations |
@@ -274,11 +280,12 @@ Adaptive-drumming-vst\
 │   └── samples\salamander\           # Salamander Drumkit (not in repo)
 ├── src\
 │   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, transport, state I/O
-│   ├── PluginEditor.h/.cpp           # 420×384 UI (incl. Follow + energy meter)
+│   ├── PluginEditor.h/.cpp           # 420×416 UI (incl. Follow + energy meter)
 │   └── drummer\
 │       ├── AdaptiveDrummer.h/.cpp    # Orchestrator
-│       ├── DrumPattern.h/.cpp        # 16-step bitmask grid
+│       ├── DrumPattern.h/.cpp        # GrooveTable: 2D intensity x complexity model
 │       ├── DrumStepClock.h           # Sample-accurate step timing
+│       ├── GrooveHash.h              # Stateless seeded hashing for the groove model
 │       ├── DrumSampler.h/.cpp        # WAV loader + playback
 │       ├── DrumSynth.h/.cpp          # Built-in procedural drum voices
 │       └── EnergyAnalyzer.h/.cpp     # Guide-track energy → adaptive density

@@ -7,7 +7,8 @@
  *
  * Dark UI inspired by GarageBand Drummer:
  *   - Style selector  (Rock / Jazz / Electronic)
- *   - Density selector (Sparse / Medium / Full)
+ *   - Intensity / Complexity sliders (the 2-D groove axes; a visual XY pad is
+ *     a later UI pass — these are plain sliders for now)
  *   - BPM display (host-synced or manual)
  *   - Volume knob
  *   - Sample-load status + browse button
@@ -34,10 +35,12 @@ private:
     juce::TextButton jazzButton       { "Jazz" };
     juce::TextButton electronicButton { "Electronic" };
 
-    // Density row
-    juce::TextButton sparseButton { "Sparse" };
-    juce::TextButton mediumButton { "Medium" };
-    juce::TextButton fullButton   { "Full" };
+    // The 2-D groove axes. Disabled (and shown live) while Follow is on, same
+    // as the density buttons they replaced.
+    juce::Slider intensitySlider, complexitySlider;
+    juce::Label  intensityTitleLabel, complexityTitleLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> complexityAttachment;
 
     // Follow (adaptive density) + guide-energy meter
     juce::TextButton     followButton { "Follow" };
