@@ -110,6 +110,7 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
     bool   fromHost    = false;
     bool   hostPlaying = false;
+    bool   hostHasPpq  = false;
     double hostPpq     = 0.0;
     if (wrapperType != wrapperType_Standalone)
         if (auto* playHead = getPlayHead())
@@ -120,16 +121,20 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     bpm      = *hostBpm;
                     fromHost = true;
                 }
+                // isPlaying is independent of whether ppq is also reported —
+                // some hosts report one without the other, and treating "no
+                // ppq" as "not playing" wrongly silenced playback.
+                hostPlaying = pos->getIsPlaying();
                 if (auto ppq = pos->getPpqPosition())
                 {
-                    hostPpq     = *ppq;
-                    hostPlaying = pos->getIsPlaying();
+                    hostPpq    = *ppq;
+                    hostHasPpq = true;
                 }
             }
     currentBpm  = bpm;
     bpmFromHost = fromHost;
     drummer.setBpm (bpm);
-    drummer.setHostTimeline (hostPlaying, hostPpq);
+    drummer.setHostTimeline (hostPlaying, hostHasPpq, hostPpq);
 
     // Play when the user's Play toggle is on, or the host transport is rolling.
     const bool playing = *apvts.getRawParameterValue ("play") > 0.5f || hostPlaying;
