@@ -37,7 +37,8 @@ public:
                        double                    sampleRate,
                        const DrumPattern&        pattern,
                        double                    bpm,
-                       int                       playheadSample);
+                       int                       playheadSample,
+                       uint32_t                  barIndex);
 
 private:
     static constexpr int kNumVoices     = 6;
@@ -50,10 +51,10 @@ private:
         double phase       { 0.0 };   // oscillator phase (radians)
         int    startOffset { 0 };     // first in-block sample to render from
         float  noisePrev   { 0.0f };  // previous raw noise (for the HP differentiator)
-        float  gain        { 1.0f };  // per-hit velocity; hard-wired to 1.0 for now
+        float  gain        { 1.0f };  // per-hit amplitude = velocity01^1.5 (perceptual curve)
     };
 
-    void  triggerVoice  (int voiceIndex, int blockOffset);
+    void  triggerVoice  (int voiceIndex, int blockOffset, float velocity01);
     float renderVoice   (int voiceIndex, Voice& v);
 
     Voice        voices[kNumVoices][kSlotsPerVoice];

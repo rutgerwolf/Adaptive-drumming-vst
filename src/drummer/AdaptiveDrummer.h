@@ -4,6 +4,8 @@
 #include "DrumSampler.h"
 #include "DrumSynth.h"
 
+#include <atomic>
+
 /**
  * AdaptiveDrummer
  *
@@ -19,6 +21,21 @@
  * block — the previous every-block re-derivation, checked against a pattern
  * length that can't exactly equal the host's true (fractional-sample) bar
  * length, caused step boundaries to be scanned twice or not at all.
+ *
+ * Structural changes are bar-latched: setStyle() only records the request in
+ * an atomic; processBlock() splits its render at bar wraps and applies the
+ * pending style exactly when the playhead reaches step 0. Since each style is
+ * an immutable const GrooveTable, applying it is a pointer re-point — calling
+ * setStyle() every block (as the processor does) costs one relaxed atomic
+ * store and rebuilds nothing (this dissolves review finding A2), and a style
+ * flip can never restructure the groove mid-bar.
+ *
+ * A bar counter (barIndex) increments at every bar wrap and feeds the
+ * pattern's stateless trigger hash, so probabilistic ornament cells vary per
+ * bar but replay bit-exactly from reset for the same groove seed. It is a
+ * local musical counter, not the host's bar number — a ppq re-lock or host
+ * loop jump does not rewind it (only which ornaments play changes, never the
+ * backbone).
  */
 class AdaptiveDrummer
 {
@@ -28,6 +45,8 @@ public:
     void prepare (double sampleRate, int blockSize);
     void reset   ();
 
+    /** Requests a style; the switch is applied at the next step-0 bar wrap
+        (or immediately if the playhead is already at step 0 / just reset). */
     void setStyle   (DrumPattern::Style   style);
     void setBpm     (double bpm);
     void setDensity (DrumPattern::Density density);
@@ -51,6 +70,9 @@ public:
     void processBlock (juce::AudioBuffer<float>& outBuffer, int numSamples);
 
     double               getBpm()     const noexcept { return bpm; }
+
+    /** The style whose table is *active* (a pending setStyle() shows up here
+        only once it has been applied at a bar wrap). */
     DrumPattern::Style   getStyle()   const noexcept { return drumPattern.getStyle(); }
     DrumPattern::Density getDensity() const noexcept { return drumPattern.getDensity(); }
 
@@ -59,6 +81,9 @@ public:
         behaviour; not needed by production callers. */
     int getCurrentPlayheadSample() const noexcept { return lastRenderedPlayhead; }
 
+    /** Bars rendered since reset (feeds the groove hash). Exposed for tests. */
+    uint32_t getBarIndex() const noexcept { return barIndex; }
+
     /** Map a host ppq position to a sample offset within a one-bar pattern.
         Exposed (and static) for testing. beatsPerBar matches the pattern length
         (4 quarter-note beats). Result is always in [0, patternLen). */
@@ -66,6 +91,14 @@ public:
                               double beatsPerBar = 4.0) noexcept;
 
 private:
+    /** Applies a pending style request (audio thread; called at step 0 only). */
+    void applyPendingStyle() noexcept;
+
+    /** Renders [startSample, startSample + numSamples) of outBuffer from
+        in-pattern position posInPattern with the active engine. */
+    void renderSegment (juce::AudioBuffer<float>& outBuffer,
+                        int startSample, int numSamples, int posInPattern);
+
     DrumPattern drumPattern;
     DrumSampler drumSampler;
     DrumSynth   drumSynth;
@@ -75,6 +108,13 @@ private:
     double currentSampleRate { 44100.0 };
     double playheadSample    { 0.0 };    // free-running; see processBlock()
     int    lastRenderedPlayhead { 0 };   // playhead used for the last-rendered block
+
+    // Style requests land here (any thread) and are applied at the step-0 bar
+    // wrap. release/acquire matches the future dynamic-table mailbox idiom;
+    // for the built-in const tables relaxed would already be safe.
+    std::atomic<int> pendingStyleIdx { static_cast<int> (DrumPattern::Style::Rock) };
+
+    uint32_t barIndex { 0 };             // bars since reset; feeds the groove hash
 
     bool   hostIsPlaying     { false };
     bool   hostHasPpq        { false };

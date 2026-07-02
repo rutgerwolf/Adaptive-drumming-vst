@@ -40,7 +40,8 @@ public:
                        double                    sampleRate,
                        const DrumPattern&        pattern,
                        double                    bpm,
-                       int                       playheadSample);
+                       int                       playheadSample,
+                       uint32_t                  barIndex);
 
     void reset();
 
@@ -63,11 +64,11 @@ private:
     {
         int   playPos       { -1 };    // -1 = inactive
         int   triggerOffset { 0 };     // sample offset within the *current* block
-        float gain          { 1.0f };  // per-hit velocity; hard-wired to 1.0 for now
+        float gain          { 1.0f };  // per-hit velocity (0..1) from the groove table
     };
 
     bool loadFirstWavInDir (const juce::File& dir, juce::AudioBuffer<float>& dest);
-    void triggerVoice      (int voiceIndex, int blockOffset);
+    void triggerVoice      (int voiceIndex, int blockOffset, float velocity01);
     void mixVoices         (juce::AudioBuffer<float>& outBuffer, int numSamples);
 
     SampleSet      sampleSet;   // guarded by sampleLock

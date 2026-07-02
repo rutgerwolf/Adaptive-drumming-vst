@@ -6,8 +6,9 @@
 
 /**
  * DrumSynth tests — the synth must make finite, audible sound when a step
- * triggers, stay silent when nothing triggers, and keep a voice ringing across
- * block boundaries.
+ * triggers, stay silent when nothing triggers, keep a voice ringing across
+ * block boundaries, and scale a hit's level with the pattern's per-hit
+ * velocity (the intensity axis).
  */
 class DrumSynthTest : public juce::UnitTest
 {
@@ -31,7 +32,7 @@ public:
 
             juce::AudioBuffer<float> buf (2, 512);
             buf.clear();
-            synth.processBlock (buf, 512, sr, pattern, bpm, 0);   // step 0 → kick at offset 0
+            synth.processBlock (buf, 512, sr, pattern, bpm, 0, 0);   // step 0 → kick at offset 0
 
             expectGreaterThan (buf.getMagnitude (0, 512), 0.01f);
 
@@ -56,7 +57,7 @@ public:
 
             juce::AudioBuffer<float> buf (1, 512);
             buf.clear();
-            synth.processBlock (buf, 512, sr, pattern, bpm, 100);  // mid-step, no boundary
+            synth.processBlock (buf, 512, sr, pattern, bpm, 100, 0);  // mid-step, no boundary
 
             expectEquals (buf.getMagnitude (0, 512), 0.0f);
         }
@@ -76,7 +77,7 @@ public:
             for (int b = 0; b < numBlocks; ++b)
             {
                 block.clear();
-                synth.processBlock (block, blockSize, sr, pattern, bpm, playhead);
+                synth.processBlock (block, blockSize, sr, pattern, bpm, playhead, 0);
 
                 double sumSq = 0.0;
                 const float* d = block.getReadPointer (0);
@@ -93,6 +94,45 @@ public:
             }
 
             expect (everyBlockRings, "the kick should sustain across block boundaries");
+        }
+
+        beginTest ("velocity is live — higher intensity produces a measurably louder hit");
+        {
+            // Same kick, same step, two intensities: the pattern's velocity
+            // (lerp velLow→velHigh) must audibly scale the synthesized hit.
+            DrumPattern quiet, loud;
+            for (auto* p : { &quiet, &loud })
+            {
+                p->loadStyle (DrumPattern::Style::Electronic);
+                p->setComplexity (0.2f);   // kick backbone only
+            }
+            quiet.setIntensity (0.2f);
+            loud.setIntensity  (0.9f);
+
+            const float velQuiet = quiet.stepVelocity (0, 0, 0);
+            const float velLoud  = loud.stepVelocity  (0, 0, 0);
+            expectGreaterThan (velLoud, velQuiet, "pattern velocity must rise with intensity");
+
+            auto renderPeak = [&] (const DrumPattern& p)
+            {
+                DrumSynth synth;
+                synth.prepare (sr);
+                juce::AudioBuffer<float> buf (1, 512);
+                buf.clear();
+                synth.processBlock (buf, 512, sr, p, bpm, 0, 0);   // kick at offset 0
+                return buf.getMagnitude (0, 512);
+            };
+
+            const float peakQuiet = renderPeak (quiet);
+            const float peakLoud  = renderPeak (loud);
+
+            logMessage ("velocity live: vel " + juce::String (velQuiet, 3) + " → peak "
+                        + juce::String (peakQuiet, 4) + "; vel " + juce::String (velLoud, 3)
+                        + " → peak " + juce::String (peakLoud, 4));
+
+            expectGreaterThan (peakQuiet, 0.0f, "quiet hit must still sound");
+            expectGreaterThan (peakLoud, peakQuiet * 1.15f,
+                               "intensity 0.9 must be measurably louder than 0.2");
         }
     }
 };

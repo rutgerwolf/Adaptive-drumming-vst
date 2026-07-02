@@ -193,6 +193,69 @@ public:
             }
             expectGreaterThan (peak, 0.01f);
         }
+
+        beginTest ("style change latches at the bar wrap, never mid-bar");
+        {
+            // A style request mid-bar must not restructure the groove until the
+            // playhead reaches step 0 of the next bar (structural changes are
+            // bar-latched; ARCHITECTURE_2D_FOLLOW §2.5). getStyle() reports the
+            // *active* table, so it is the direct observable.
+            const double sr  = 48000.0;
+            const double bpm = 120.0;             // bar = 96000 samples exactly
+            const int blockSize = 512;
+
+            AdaptiveDrummer d;
+            d.prepare (sr, blockSize);
+            d.setBpm (bpm);
+            d.setHostTimeline (false, false, 0.0);
+
+            DrumPattern ref;
+            const int patternLen = ref.getLengthInSamples (bpm, sr);
+            expectEquals (patternLen, 96000);
+
+            juce::AudioBuffer<float> buf (2, blockSize);
+            auto renderBlocks = [&] (int count)
+            {
+                for (int b = 0; b < count; ++b)
+                {
+                    buf.clear();
+                    d.processBlock (buf, blockSize);
+                }
+            };
+
+            expect (d.getStyle() == DrumPattern::Style::Rock, "default style is Rock");
+            expectEquals ((int) d.getBarIndex(), 0);
+
+            renderBlocks (10);                    // 5120 samples into bar 0
+            d.setStyle (DrumPattern::Style::Jazz);   // requested mid-bar...
+
+            // ...and must stay pending for the whole rest of the bar. 187 full
+            // blocks fit inside the 96000-sample bar (187 × 512 = 95744).
+            const int fullBlocksInBar = patternLen / blockSize;   // 187
+            renderBlocks (fullBlocksInBar - 10);                  // playhead now at 95744
+            expect (d.getStyle() == DrumPattern::Style::Rock,
+                    "style must not switch mid-bar");
+            expectEquals ((int) d.getBarIndex(), 0, "still inside bar 0");
+
+            // The next block spans the wrap (95744 → 96256): the switch happens
+            // exactly at the in-block step-0 boundary.
+            renderBlocks (1);
+            expect (d.getStyle() == DrumPattern::Style::Jazz,
+                    "style must be applied at the step-0 bar wrap");
+            expectEquals ((int) d.getBarIndex(), 1, "bar counter advances at the wrap");
+
+            // A request made while the playhead sits at step 0 (fresh reset)
+            // applies before the first trigger — no one-bar lag from silence.
+            AdaptiveDrummer d2;
+            d2.prepare (sr, blockSize);
+            d2.setBpm (bpm);
+            d2.setHostTimeline (false, false, 0.0);
+            d2.setStyle (DrumPattern::Style::Electronic);
+            buf.clear();
+            d2.processBlock (buf, blockSize);
+            expect (d2.getStyle() == DrumPattern::Style::Electronic,
+                    "a style requested before playback starts must apply at bar 0");
+        }
     }
 };
 
