@@ -103,11 +103,14 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         tests/EnergyAnalyzerTest.cpp
         tests/AdaptiveDrummerTest.cpp
         tests/DrumSynthTest.cpp
+        tests/AdaptiveDrummerProcessorTest.cpp
         src/drummer/DrumPattern.cpp
         src/drummer/DrumSampler.cpp
         src/drummer/DrumSynth.cpp
         src/drummer/EnergyAnalyzer.cpp
         src/drummer/AdaptiveDrummer.cpp
+        src/PluginProcessor.cpp
+        src/PluginEditor.cpp
     )
 
     target_include_directories(AdaptiveDrummerTests PRIVATE src)
@@ -123,6 +126,14 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
             juce::juce_audio_basics
             juce::juce_audio_formats
             juce::juce_core
+            juce::juce_audio_processors
+            juce::juce_audio_utils
+            juce::juce_audio_devices
+            juce::juce_data_structures
+            juce::juce_events
+            juce::juce_graphics
+            juce::juce_gui_basics
+            juce::juce_gui_extra
         PUBLIC
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags
