@@ -49,7 +49,13 @@ bool DrumSampler::loadSamples (const juce::File& root)
     {
         const juce::SpinLock::ScopedLockType sl (sampleLock);
         std::swap (sampleSet, newSet);
-        for (auto& v : voices) { v.playPos = -1; v.triggerOffset = 0; }
+        for (auto& perVoice : voices)
+            for (auto& v : perVoice)
+            {
+                v.playPos       = -1;
+                v.triggerOffset = 0;
+                v.gain          = 1.0f;
+            }
     }
 
     anyVoiceLoaded.store (loaded, std::memory_order_relaxed);
@@ -75,11 +81,13 @@ void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
 
 void DrumSampler::reset()
 {
-    for (auto& v : voices)
-    {
-        v.playPos       = -1;
-        v.triggerOffset = 0;
-    }
+    for (auto& perVoice : voices)
+        for (auto& v : perVoice)
+        {
+            v.playPos       = -1;
+            v.triggerOffset = 0;
+            v.gain          = 1.0f;
+        }
 }
 
 // ── private ──────────────────────────────────────────────────────────────────
@@ -124,44 +132,73 @@ bool DrumSampler::loadFirstWavInDir (const juce::File& dir,
 
 void DrumSampler::triggerVoice (int voiceIndex, int blockOffset)
 {
-    voices[voiceIndex].playPos       = 0;
-    voices[voiceIndex].triggerOffset = blockOffset;
+    auto* slots = voices[voiceIndex];
+
+    // Prefer a free slot.
+    int chosen = -1;
+    for (int s = 0; s < kSlotsPerVoice; ++s)
+    {
+        if (slots[s].playPos < 0)
+        {
+            chosen = s;
+            break;
+        }
+    }
+
+    // Pool full: steal the most-advanced slot (largest playPos) — it is
+    // closest to finishing, so cutting it off is the least noticeable.
+    if (chosen < 0)
+    {
+        chosen = 0;
+        for (int s = 1; s < kSlotsPerVoice; ++s)
+            if (slots[s].playPos > slots[chosen].playPos)
+                chosen = s;
+    }
+
+    auto& v = slots[chosen];
+    v.playPos       = 0;
+    v.triggerOffset = blockOffset;
+    v.gain          = 1.0f;
 }
 
 void DrumSampler::mixVoices (juce::AudioBuffer<float>& outBuffer, int numSamples)
 {
     for (int i = 0; i < kNumVoices; ++i)
     {
-        auto&       v      = voices[i];
         const auto& sample = sampleSet.samples[i];
+        if (sample.getNumSamples() == 0) continue;
 
-        if (v.playPos < 0 || sample.getNumSamples() == 0) continue;
-
-        // A newly-loaded set may be shorter than where an in-flight cursor sits.
-        if (v.playPos >= sample.getNumSamples()) { v.playPos = -1; continue; }
-
-        const int startInBlock = v.triggerOffset;
-        const int blockRemain  = numSamples - startInBlock;
-        if (blockRemain <= 0) continue;
-
-        const int sampleRemain = sample.getNumSamples() - v.playPos;
-        const int toCopy       = juce::jmin (blockRemain, sampleRemain);
-
-        for (int ch = 0; ch < outBuffer.getNumChannels(); ++ch)
+        for (auto& v : voices[i])
         {
-            const int srcCh = juce::jmin (ch, sample.getNumChannels() - 1);
-            outBuffer.addFrom (ch, startInBlock,
-                               sample, srcCh, v.playPos, toCopy);
+            if (v.playPos < 0) continue;
+
+            // A newly-loaded set may be shorter than where an in-flight cursor sits.
+            if (v.playPos >= sample.getNumSamples()) { v.playPos = -1; continue; }
+
+            const int startInBlock = v.triggerOffset;
+            const int blockRemain  = numSamples - startInBlock;
+            if (blockRemain <= 0) continue;
+
+            const int sampleRemain = sample.getNumSamples() - v.playPos;
+            const int toCopy       = juce::jmin (blockRemain, sampleRemain);
+
+            for (int ch = 0; ch < outBuffer.getNumChannels(); ++ch)
+            {
+                const int srcCh = juce::jmin (ch, sample.getNumChannels() - 1);
+                outBuffer.addFrom (ch, startInBlock,
+                                   sample, srcCh, v.playPos, toCopy, v.gain);
+            }
+
+            v.playPos += toCopy;
+            if (v.playPos >= sample.getNumSamples())
+                v.playPos = -1;
+
+            // B1 fix: once this block has been served, the note continues from the
+            // start of the next block. Without this reset, every subsequent block
+            // re-skips `triggerOffset` samples → a recurring gap/click on any sample
+            // longer than one buffer. Applies per slot so each overlapping hit
+            // tracks its own mid-block start correctly.
+            v.triggerOffset = 0;
         }
-
-        v.playPos += toCopy;
-        if (v.playPos >= sample.getNumSamples())
-            v.playPos = -1;
-
-        // B1 fix: once this block has been served, the note continues from the
-        // start of the next block. Without this reset, every subsequent block
-        // re-skips `triggerOffset` samples → a recurring gap/click on any sample
-        // longer than one buffer.
-        v.triggerOffset = 0;
     }
 }
