@@ -67,14 +67,16 @@ void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
                                 double                    sampleRate,
                                 const DrumPattern&        pattern,
                                 double                    bpm,
-                                int                       playheadSample)
+                                int                       playheadSample,
+                                uint32_t                  barIndex)
 {
     // If loadSamples() is mid-swap, skip this block rather than race the buffers.
     const juce::SpinLock::ScopedTryLockType sl (sampleLock);
     if (! sl.isLocked()) return;
 
-    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate,
-                        [this] (int voice, int offset) { triggerVoice (voice, offset); });
+    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate, barIndex,
+                        [this] (int voice, int offset, float velocity01)
+                        { triggerVoice (voice, offset, velocity01); });
 
     mixVoices (outBuffer, numSamples);
 }
@@ -130,7 +132,7 @@ bool DrumSampler::loadFirstWavInDir (const juce::File& dir,
     return dest.getNumSamples() > 0;
 }
 
-void DrumSampler::triggerVoice (int voiceIndex, int blockOffset)
+void DrumSampler::triggerVoice (int voiceIndex, int blockOffset, float velocity01)
 {
     auto* slots = voices[voiceIndex];
 
@@ -158,7 +160,7 @@ void DrumSampler::triggerVoice (int voiceIndex, int blockOffset)
     auto& v = slots[chosen];
     v.playPos       = 0;
     v.triggerOffset = blockOffset;
-    v.gain          = 1.0f;
+    v.gain          = velocity01;   // samples are normalized; velocity is the slot gain
 }
 
 void DrumSampler::mixVoices (juce::AudioBuffer<float>& outBuffer, int numSamples)

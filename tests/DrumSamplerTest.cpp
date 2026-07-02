@@ -48,6 +48,12 @@ public:
             const int    patternLen = pattern.getLengthInSamples (bpm, sr); // 192000
             const int    stepLen    = patternLen / DrumPattern::kSteps;     // 12000
 
+            // The kick's per-hit velocity is now the slot gain, so the DC hit
+            // renders at this level (deterministic: the backbone kick has no
+            // velocity humanization).
+            const float hitLevel = pattern.stepVelocity (0, 0, 0);
+            expectGreaterThan (hitLevel, 0.0f);
+
             // Begin 10 samples before bar 1 so step 0 fires at in-block offset 10.
             const int triggerOffset = 10;
             int       playhead      = patternLen - triggerOffset;
@@ -66,19 +72,20 @@ public:
             for (int b = 0; b < numBlocks; ++b)
             {
                 block.clear();
-                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead);
+                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead, 0);
                 captured.copyFrom (0, b * blockSize, block, 0, 0, blockSize);
                 playhead = (playhead + blockSize) % patternLen;
             }
 
-            // Expect: silence in [0, 10), the DC hit in [10, 2010), silence after.
+            // Expect: silence in [0, 10), the DC hit at hitLevel in
+            // [10, 2010), silence after — one contiguous burst, no gaps.
             const float* d  = captured.getReadPointer (0);
             bool  contiguous = true;
             int   firstBad   = -1;
             for (int i = 0; i < total; ++i)
             {
                 const bool  inHit    = (i >= triggerOffset && i < triggerOffset + sampleLen);
-                const float expected = inHit ? 1.0f : 0.0f;
+                const float expected = inHit ? hitLevel : 0.0f;
                 if (std::abs (d[i] - expected) > 1.0e-3f)
                 {
                     contiguous = false;
@@ -109,7 +116,7 @@ public:
             DrumPattern pattern;             // default Rock / Medium
             juce::AudioBuffer<float> block (2, 256);
             block.clear();
-            sampler.processBlock (block, 256, 44100.0, pattern, 120.0, 0);
+            sampler.processBlock (block, 256, 44100.0, pattern, 120.0, 0, 0);
 
             expectEquals (block.getMagnitude (0, 256), 0.0f);
         }
@@ -158,7 +165,7 @@ public:
             while (std::chrono::steady_clock::now() < tEnd)
             {
                 block.clear();
-                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead);
+                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead, 0);
                 for (int ch = 0; ch < block.getNumChannels() && allFinite; ++ch)
                 {
                     const float* d = block.getReadPointer (ch);
@@ -177,7 +184,7 @@ public:
 
             // A settled render still produces finite audio.
             block.clear();
-            sampler.processBlock (block, blockSize, sr, pattern, bpm, 0);
+            sampler.processBlock (block, blockSize, sr, pattern, bpm, 0, 0);
             expect (std::isfinite (block.getMagnitude (0, blockSize)));
 
             kitA.deleteRecursively();
@@ -213,7 +220,17 @@ public:
             // samples means, e.g., the hits at 0 and 24000 are both still sounding
             // during [24000, 50000) — a direct, deterministic proof of polyphony.
             // The old single-cursor code would reset playPos on every retrigger and
-            // could never produce more than one kick's worth of level (DC 0.5).
+            // could never produce more than one kick's worth of level.
+            //
+            // The four-on-the-floor kick is authored at a uniform velocity, so a
+            // single hit renders DC at exactly dcLevel * vel and overlapping
+            // hits stack in multiples of it.
+            const float vel = pattern.stepVelocity (0, 0, 0);
+            for (int s : { 4, 8, 12 })
+                expectEquals (pattern.stepVelocity (0, s, 0), vel,
+                              "Electronic four-on-the-floor kicks are authored uniform");
+            const float singleHit = dcLevel * vel;
+
             const int blockSize = 512;   // deliberately does not divide patternLen,
                                           // so hits also land mid-block at times.
 
@@ -226,7 +243,7 @@ public:
             while (written < patternLen)
             {
                 block.clear();
-                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead);
+                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead, 0);
 
                 const int toCopy = juce::jmin (blockSize, patternLen - written);
                 captured.copyFrom (0, written, block, 0, 0, toCopy);
@@ -247,11 +264,12 @@ public:
 
             expect (allFinite, "captured buffer must be finite throughout");
 
-            logMessage ("B2 overlap test: observed max sample = " + juce::String (maxSample, 4));
-            expectGreaterThan (maxSample, 0.9f,
-                               "overlapping DC=0.5 kicks must sum above a single hit's level "
-                               "(0.5) — this only happens if multiple instances of the same "
-                               "voice can ring concurrently");
+            logMessage ("B2 overlap test: single-hit level = " + juce::String (singleHit, 4)
+                        + ", observed max sample = " + juce::String (maxSample, 4));
+            expectGreaterThan (maxSample, 1.5f * singleHit,
+                               "overlapping kicks must sum above a single hit's level — this "
+                               "only happens if multiple instances of the same voice can ring "
+                               "concurrently");
 
             kitRoot.deleteRecursively();
         }

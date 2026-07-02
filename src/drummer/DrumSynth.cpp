@@ -25,7 +25,7 @@ void DrumSynth::reset()
     }
 }
 
-void DrumSynth::triggerVoice (int voiceIndex, int blockOffset)
+void DrumSynth::triggerVoice (int voiceIndex, int blockOffset, float velocity01)
 {
     auto* slots = voices[voiceIndex];
 
@@ -56,7 +56,8 @@ void DrumSynth::triggerVoice (int voiceIndex, int blockOffset)
     v.phase       = 0.0;
     v.startOffset = blockOffset;
     v.noisePrev   = 0.0f;
-    v.gain        = 1.0f;
+    // Perceptual velocity curve: amplitude = vel^1.5 (== vel * sqrt(vel), no powf).
+    v.gain        = velocity01 * std::sqrt (juce::jmax (0.0f, velocity01));
 }
 
 void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
@@ -64,12 +65,14 @@ void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
                               double                    newSampleRate,
                               const DrumPattern&        pattern,
                               double                    bpm,
-                              int                       playheadSample)
+                              int                       playheadSample,
+                              uint32_t                  barIndex)
 {
     sampleRate = newSampleRate > 0.0 ? newSampleRate : sampleRate;
 
-    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate,
-                        [this] (int voice, int offset) { triggerVoice (voice, offset); });
+    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate, barIndex,
+                        [this] (int voice, int offset, float velocity01)
+                        { triggerVoice (voice, offset, velocity01); });
 
     const int numCh = juce::jmin (outBuffer.getNumChannels(), 8);
     float*    chans[8] { nullptr };
