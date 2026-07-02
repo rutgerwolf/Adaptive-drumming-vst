@@ -15,6 +15,10 @@
  * triggerOffset reset, every block after the first re-skipped `triggerOffset`
  * samples, leaving a periodic silent gap (an audible click). This test fails
  * against that bug and passes once it is fixed.
+ *
+ * The B2 test below is the polyphony-pool regression: retriggering the same
+ * voice while a previous hit is still ringing must let both instances sound
+ * concurrently instead of the newer hit stealing the single cursor.
  */
 class DrumSamplerTest : public juce::UnitTest
 {
@@ -179,12 +183,84 @@ public:
             kitA.deleteRecursively();
             kitB.deleteRecursively();
         }
+
+        beginTest ("B2 — overlapping same-voice hits ring concurrently instead of stealing the cursor");
+        {
+            const double sr        = 48000.0;
+            const double bpm       = 120.0;
+            const int    sampleLen = 50000;   // long enough to still be ringing at the next few kick hits
+            const float  dcLevel   = 0.5f;    // two overlapping hits sum to 1.0, three to 1.5
+
+            auto kitRoot = makeTempKitWithKick (sampleLen, sr, dcLevel);
+
+            DrumSampler sampler;
+            sampler.prepare (sr);
+            expect (sampler.loadSamples (kitRoot), "temp kit should load");
+            expect (sampler.areSamplesLoaded());
+
+            // Electronic / Sparse fires the kick on steps 0, 4, 8, 12 (and the snare on
+            // 4 & 12, but no snare sample is loaded, so only the kick sounds).
+            DrumPattern pattern;
+            pattern.loadStyle  (DrumPattern::Style::Electronic);
+            pattern.setDensity (DrumPattern::Density::Sparse);
+
+            const int patternLen = pattern.getLengthInSamples (bpm, sr);   // 96000
+            const int stepLen    = patternLen / DrumPattern::kSteps;       // 6000
+            expectEquals (patternLen, 96000);
+            expectEquals (stepLen, 6000);
+
+            // Kick hits land at 0 / 24000 / 48000 / 72000. Each ringing for 50000
+            // samples means, e.g., the hits at 0 and 24000 are both still sounding
+            // during [24000, 50000) — a direct, deterministic proof of polyphony.
+            // The old single-cursor code would reset playPos on every retrigger and
+            // could never produce more than one kick's worth of level (DC 0.5).
+            const int blockSize = 512;   // deliberately does not divide patternLen,
+                                          // so hits also land mid-block at times.
+
+            juce::AudioBuffer<float> captured (1, patternLen);
+            captured.clear();
+
+            juce::AudioBuffer<float> block (1, blockSize);
+            int playhead = 0;
+            int written  = 0;
+            while (written < patternLen)
+            {
+                block.clear();
+                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead);
+
+                const int toCopy = juce::jmin (blockSize, patternLen - written);
+                captured.copyFrom (0, written, block, 0, 0, toCopy);
+
+                written  += toCopy;
+                playhead  = (playhead + blockSize) % patternLen;
+            }
+
+            const float* d = captured.getReadPointer (0);
+            float maxSample  = 0.0f;
+            bool  allFinite  = true;
+            for (int i = 0; i < patternLen; ++i)
+            {
+                if (! std::isfinite (d[i]))
+                    allFinite = false;
+                maxSample = juce::jmax (maxSample, d[i]);
+            }
+
+            expect (allFinite, "captured buffer must be finite throughout");
+
+            logMessage ("B2 overlap test: observed max sample = " + juce::String (maxSample, 4));
+            expectGreaterThan (maxSample, 0.9f,
+                               "overlapping DC=0.5 kicks must sum above a single hit's level "
+                               "(0.5) — this only happens if multiple instances of the same "
+                               "voice can ring concurrently");
+
+            kitRoot.deleteRecursively();
+        }
     }
 
 private:
     // Creates <temp>/adk_test_kit_XXXX/kick/kick.wav containing `numSamples`
-    // of DC = 1.0 (mono). Returns the kit root directory.
-    juce::File makeTempKitWithKick (int numSamples, double sr)
+    // of DC = `dcLevel` (mono). Returns the kit root directory.
+    juce::File makeTempKitWithKick (int numSamples, double sr, float dcLevel = 1.0f)
     {
         auto root = juce::File::createTempFile ("adk_test_kit");
         root.deleteFile();
@@ -206,7 +282,7 @@ private:
             {
                 juce::AudioBuffer<float> buf (1, numSamples);
                 for (int i = 0; i < numSamples; ++i)
-                    buf.setSample (0, i, 1.0f);
+                    buf.setSample (0, i, dcLevel);
                 writer->writeFromAudioSampleBuffer (buf, 0, numSamples);
             }
             else

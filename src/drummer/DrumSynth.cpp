@@ -11,24 +11,52 @@ void DrumSynth::prepare (double newSampleRate)
 
 void DrumSynth::reset()
 {
-    for (auto& v : voices)
+    for (auto& perVoice : voices)
     {
-        v.active      = false;
-        v.t           = 0.0;
-        v.phase       = 0.0;
-        v.startOffset = 0;
-        v.noisePrev   = 0.0f;
+        for (auto& v : perVoice)
+        {
+            v.active      = false;
+            v.t           = 0.0;
+            v.phase       = 0.0;
+            v.startOffset = 0;
+            v.noisePrev   = 0.0f;
+            v.gain        = 1.0f;
+        }
     }
 }
 
 void DrumSynth::triggerVoice (int voiceIndex, int blockOffset)
 {
-    auto& v = voices[voiceIndex];
+    auto* slots = voices[voiceIndex];
+
+    // Prefer a free slot.
+    int chosen = -1;
+    for (int s = 0; s < kSlotsPerVoice; ++s)
+    {
+        if (! slots[s].active)
+        {
+            chosen = s;
+            break;
+        }
+    }
+
+    // Pool full: steal the most-decayed slot (largest t) — it is the least
+    // audible one to cut off.
+    if (chosen < 0)
+    {
+        chosen = 0;
+        for (int s = 1; s < kSlotsPerVoice; ++s)
+            if (slots[s].t > slots[chosen].t)
+                chosen = s;
+    }
+
+    auto& v = slots[chosen];
     v.active      = true;
     v.t           = 0.0;
     v.phase       = 0.0;
     v.startOffset = blockOffset;
     v.noisePrev   = 0.0f;
+    v.gain        = 1.0f;
 }
 
 void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
@@ -53,10 +81,13 @@ void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
         float s = 0.0f;
         for (int vIdx = 0; vIdx < kNumVoices; ++vIdx)
         {
-            auto& v = voices[vIdx];
-            if (! v.active || i < v.startOffset)
-                continue;
-            s += renderVoice (vIdx, v);
+            for (int sIdx = 0; sIdx < kSlotsPerVoice; ++sIdx)
+            {
+                auto& v = voices[vIdx][sIdx];
+                if (! v.active || i < v.startOffset)
+                    continue;
+                s += renderVoice (vIdx, v) * v.gain;
+            }
         }
 
         if (s != 0.0f)
@@ -66,8 +97,9 @@ void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
 
     // A note started this block at startOffset; from the next block it continues
     // from the start of the buffer.
-    for (auto& v : voices)
-        v.startOffset = 0;
+    for (auto& perVoice : voices)
+        for (auto& v : perVoice)
+            v.startOffset = 0;
 }
 
 float DrumSynth::renderVoice (int voiceIndex, Voice& v)
