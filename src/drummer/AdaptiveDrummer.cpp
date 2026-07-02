@@ -63,6 +63,16 @@ void AdaptiveDrummer::setDensity (DrumPattern::Density density)
     drumPattern.setDensity (density);
 }
 
+void AdaptiveDrummer::setComplexity (float complexity01) noexcept
+{
+    drumPattern.setComplexity (complexity01);
+}
+
+void AdaptiveDrummer::setIntensity (float intensity01) noexcept
+{
+    drumPattern.setIntensity (intensity01);
+}
+
 void AdaptiveDrummer::setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition) noexcept
 {
     hostIsPlaying   = isPlaying;

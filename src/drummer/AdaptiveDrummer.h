@@ -51,6 +51,11 @@ public:
     void setBpm     (double bpm);
     void setDensity (DrumPattern::Density density);
 
+    /** The 2-D groove axes (see DrumPattern.h). Applied immediately (not
+        bar-latched) — only style switches are. */
+    void setComplexity (float complexity01) noexcept;
+    void setIntensity  (float intensity01)  noexcept;
+
     /** Choose the sound source: synthesised voices (no samples needed) or the
         WAV sampler. */
     void setUseSynth (bool shouldUseSynth) noexcept { useSynth = shouldUseSynth; }

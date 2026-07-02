@@ -23,6 +23,17 @@ AdaptiveDrummerProcessor::createParameterLayout()
         juce::ParameterID { "density", 1 }, "Density",
         juce::StringArray { "Sparse", "Medium", "Full" }, 1));
 
+    // The 2-D groove axes (DrumPattern.h). Version hint 2: added after v1,
+    // some hosts key parameter identity on it. Defaults (0.55, 0.55) are
+    // mask-equivalent to the legacy "density" default of Medium.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "intensity", 2 }, "Intensity",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.55f));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "complexity", 2 }, "Complexity",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.55f));
+
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "volume", 1 }, "Volume",
         juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.8f));
@@ -145,13 +156,22 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Sound source: 0 = Synth (no samples needed), 1 = Samples.
     drummer.setUseSynth (static_cast<int> (*apvts.getRawParameterValue ("source")) == 0);
 
-    // Density: adaptive from the guide energy when Follow is on, else manual.
-    const DrumPattern::Density density = follow
-        ? energyAnalyzer.getDensity()
-        : static_cast<DrumPattern::Density> (
-              static_cast<int> (*apvts.getRawParameterValue ("density")));
-    drummer.setDensity (density);
-    currentDensityState.store (static_cast<int> (density), std::memory_order_relaxed);
+    // The 2-D groove axes: adaptive from the guide energy when Follow is on
+    // (still driven by EnergyAnalyzer's 3-step hysteresis, mapped onto the
+    // axes via the same legacy mapping the "density" parameter used), else
+    // the manual Intensity/Complexity sliders directly.
+    float complexity01, intensity01;
+    if (follow)
+        DrumPattern::mapLegacy (energyAnalyzer.getDensity(), complexity01, intensity01);
+    else
+    {
+        complexity01 = *apvts.getRawParameterValue ("complexity");
+        intensity01  = *apvts.getRawParameterValue ("intensity");
+    }
+    drummer.setComplexity (complexity01);
+    drummer.setIntensity  (intensity01);
+    currentComplexityState.store (complexity01, std::memory_order_relaxed);
+    currentIntensityState.store  (intensity01,  std::memory_order_relaxed);
 
     // Generate drums into the main output bus (silence + rewind when stopped).
     if (playing)
@@ -178,7 +198,28 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
         {
+            // A session saved before "intensity" existed has no <PARAM id="intensity".../>
+            // child; detect that here, before replaceState() discards the original XML.
+            const bool isPreGrooveTableState = xml->getChildByAttribute ("id", "intensity") == nullptr;
+
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+
+            if (isPreGrooveTableState)
+            {
+                // Missing intensity/complexity left them at their built-in
+                // default (0.55/0.55); derive the axes the old "density" this
+                // session restored to actually meant, so the session's feel
+                // survives the upgrade instead of silently resetting to Medium.
+                const auto density = static_cast<DrumPattern::Density> (
+                    static_cast<int> (*apvts.getRawParameterValue ("density")));
+                float complexity01 = 0.0f, intensity01 = 0.0f;
+                DrumPattern::mapLegacy (density, complexity01, intensity01);
+
+                if (auto* p = apvts.getParameter ("complexity"))
+                    p->setValueNotifyingHost (p->convertTo0to1 (complexity01));
+                if (auto* p = apvts.getParameter ("intensity"))
+                    p->setValueNotifyingHost (p->convertTo0to1 (intensity01));
+            }
 
             // Re-load the kit this session was saved with.
             const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();

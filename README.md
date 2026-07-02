@@ -15,9 +15,9 @@ own tempo when used as a standalone application.
 | Feature | Details |
 |---|---|
 | Styles | Rock, Jazz, Electronic |
-| Pattern densities | Sparse, Medium, Full |
+| Groove axes | **Intensity** (dynamics) × **Complexity** (how busy) — continuous 0–1 sliders |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
-| Adaptive density | **Follow** mode maps the energy of the input/guide track to density |
+| Adaptive groove | **Follow** mode maps the energy of the input/guide track onto Intensity/Complexity |
 | BPM / tempo | Reads host transport; **editable BPM** (double-click) otherwise |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
@@ -31,8 +31,9 @@ own tempo when used as a standalone application.
 ┌─────────────────────────────────────────────────────┐
 │  ADAPTIVE DRUMMER                          [ Play ] │
 ├─────────────────────────────────────────────────────┤
-│  Style   [ Rock ]  [ Jazz ]  [ Electronic ]         │
-│  Density [ Sparse ] [ Medium ] [ Full ]             │
+│  Style      [ Rock ]  [ Jazz ]  [ Electronic ]      │
+│  Intensity  ▬▬▬▬▬▬●▬▬▬▬  0.55                       │
+│  Complexity ▬▬▬▬▬▬●▬▬▬▬  0.55                       │
 │  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
 │  Sound   [ Synth ] [ Samples ]                      │
 ├─────────────────────────────────────────────────────┤
@@ -43,14 +44,14 @@ own tempo when used as a standalone application.
 │  Samples: kick/ snare/ hihat/ crash/ ride/ tom/     │
 │  [Load samples...]                                  │
 └─────────────────────────────────────────────────────┘
-         420 × 384 px
+         420 × 416 px
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
 - **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
-- **Density row** — radio buttons (group 2); controls how many hits are placed per bar. Disabled while **Follow** is on (density is then automatic).
-- **Follow toggle** — when on, the density tracks the energy of the track feeding the effect instead of the manual density buttons.
-- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive density.
+- **Intensity / Complexity sliders** — the 2-D groove axes: Intensity is per-hit dynamics, Complexity is how busy the pattern is. Continuous 0–1, replacing the old 3-step density buttons (a visual XY pad is a later UI pass). Disabled and shown live while **Follow** is on (then they're automatic).
+- **Follow toggle** — when on, Intensity/Complexity track the energy of the track feeding the effect instead of the manual sliders.
+- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive groove.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM field** — shows the live tempo (refreshed at 10 Hz). **Double-click to type a tempo** (40–240) — this is how you set the speed in the Standalone. When a DAW transport supplies the tempo the field locks and follows the host.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
@@ -66,8 +67,9 @@ tracks in Reaper, Ableton Live, Cubase, FL Studio, Bitwig — or run the **Stand
 press **Play**.
 
 Insert it on a track: it **outputs the generated drums**. With **Follow** on, the track's
-incoming audio is the guide (louder/busier → fuller pattern). Put it on a dedicated track for a
-pure drum machine, or on a part you want it to react to for adaptive density.
+incoming audio is the guide (louder/busier → higher intensity and complexity). Put it on a
+dedicated track for a pure drum machine, or on a part you want it to react to for an adaptive
+groove.
 
 > Some Adobe hosts have a known VST3 quirk where the custom editor may not render (you get
 > generic parameter sliders). It still loads and plays.
@@ -85,10 +87,12 @@ a nested folder" layout is correct and required.
 | ID | Type | Range | Default | Description |
 |---|---|---|---|---|
 | `style` | Choice | 0 Rock · 1 Jazz · 2 Electronic | 0 | Groove style |
-| `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Pattern density |
+| `intensity` | Float | 0–1 (step 0.01) | 0.55 | Dynamics axis — per-hit velocity (used when Follow is off) |
+| `complexity` | Float | 0–1 (step 0.01) | 0.55 | Structural axis — how busy the pattern is (used when Follow is off) |
+| `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Legacy; kept registered for parameter-ID stability. No longer read by `processBlock()`, only used to migrate a pre-2.0 saved session's `intensity`/`complexity` |
 | `bpm` | Float | 40–240 (step 0.1) | 120 | Tempo; **editable in the UI** (double-click the BPM field). Host tempo overrides it when present |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
-| `follow` | Bool | off · on | off | Adaptive density from the guide track (overrides `density`) |
+| `follow` | Bool | off · on | off | Adaptive intensity/complexity from the guide track (overrides the sliders) |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
 | `play` | Bool | off · on | off | Transport: generate drums (also driven by the host transport) |
 

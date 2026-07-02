@@ -176,18 +176,23 @@ public:
             proc.releaseResources();
         }
 
-        beginTest ("state round-trip preserves style, bpm and volume");
+        beginTest ("state round-trip preserves style, bpm, volume, intensity and complexity");
         {
             AdaptiveDrummerProcessor proc;
 
-            auto* styleParam  = proc.apvts.getParameter ("style");
-            auto* bpmParam    = proc.apvts.getParameter ("bpm");
-            auto* volumeParam = proc.apvts.getParameter ("volume");
+            auto* styleParam      = proc.apvts.getParameter ("style");
+            auto* bpmParam        = proc.apvts.getParameter ("bpm");
+            auto* volumeParam     = proc.apvts.getParameter ("volume");
+            auto* intensityParam  = proc.apvts.getParameter ("intensity");
+            auto* complexityParam = proc.apvts.getParameter ("complexity");
 
-            // Distinct, non-default values (defaults: style=Rock(0), bpm=120, volume=0.8).
-            styleParam->setValueNotifyingHost  (styleParam->convertTo0to1  (1.0f));    // Jazz
-            bpmParam->setValueNotifyingHost    (bpmParam->convertTo0to1    (150.0f));
-            volumeParam->setValueNotifyingHost (volumeParam->convertTo0to1 (0.35f));
+            // Distinct, non-default values (defaults: style=Rock(0), bpm=120,
+            // volume=0.8, intensity=complexity=0.55).
+            styleParam->setValueNotifyingHost      (styleParam->convertTo0to1      (1.0f));    // Jazz
+            bpmParam->setValueNotifyingHost        (bpmParam->convertTo0to1        (150.0f));
+            volumeParam->setValueNotifyingHost     (volumeParam->convertTo0to1     (0.35f));
+            intensityParam->setValueNotifyingHost  (intensityParam->convertTo0to1  (0.9f));
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.1f));
 
             juce::MemoryBlock savedState;
             proc.getStateInformation (savedState);
@@ -201,6 +206,53 @@ public:
                                        "bpm must survive the round-trip");
             expectWithinAbsoluteError ((double) *fresh.apvts.getRawParameterValue ("volume"), 0.35, 0.001,
                                        "volume must survive the round-trip");
+            expectWithinAbsoluteError ((double) *fresh.apvts.getRawParameterValue ("intensity"), 0.9, 0.001,
+                                       "intensity must survive the round-trip");
+            expectWithinAbsoluteError ((double) *fresh.apvts.getRawParameterValue ("complexity"), 0.1, 0.001,
+                                       "complexity must survive the round-trip");
+        }
+
+        beginTest ("pre-GrooveTable (v1) session migrates its density into intensity/complexity");
+        {
+            // Build a v1-shaped state: a real saved session, but with the
+            // intensity/complexity <PARAM> elements stripped out entirely --
+            // exactly what a session saved before those parameters existed
+            // looks like (replaceState() then leaves them at their built-in
+            // default, which setStateInformation() must detect and correct).
+            AdaptiveDrummerProcessor seed;
+            auto* densityParam = seed.apvts.getParameter ("density");
+            densityParam->setValueNotifyingHost (densityParam->convertTo0to1 (2.0f));   // Full
+
+            juce::MemoryBlock seedState;
+            seed.getStateInformation (seedState);
+
+            auto xml = juce::AudioProcessor::getXmlFromBinary (seedState.getData(), (int) seedState.getSize());
+            expect (xml != nullptr, "seed state must parse as XML");
+
+            if (auto* e = xml->getChildByAttribute ("id", "intensity"))  xml->removeChildElement (e, true);
+            if (auto* e = xml->getChildByAttribute ("id", "complexity")) xml->removeChildElement (e, true);
+            expect (xml->getChildByAttribute ("id", "intensity") == nullptr,
+                    "premise: the v1-shaped state must genuinely lack an intensity element");
+
+            juce::MemoryBlock v1State;
+            juce::AudioProcessor::copyXmlToBinary (*xml, v1State);
+
+            AdaptiveDrummerProcessor fresh;
+            fresh.setStateInformation (v1State.getData(), (int) v1State.getSize());
+
+            float expectedComplexity = 0.0f, expectedIntensity = 0.0f;
+            DrumPattern::mapLegacy (DrumPattern::Density::Full, expectedComplexity, expectedIntensity);
+
+            expectEquals ((int) *fresh.apvts.getRawParameterValue ("density"), 2,
+                          "density itself must still restore correctly");
+            expectWithinAbsoluteError ((double) *fresh.apvts.getRawParameterValue ("complexity"),
+                                       (double) expectedComplexity, 0.001,
+                                       "complexity must be derived from the restored legacy density, "
+                                       "not left at the plain default");
+            expectWithinAbsoluteError ((double) *fresh.apvts.getRawParameterValue ("intensity"),
+                                       (double) expectedIntensity, 0.001,
+                                       "intensity must be derived from the restored legacy density, "
+                                       "not left at the plain default");
         }
     }
 };
