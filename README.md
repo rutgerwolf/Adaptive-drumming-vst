@@ -17,7 +17,7 @@ own tempo when used as a standalone application.
 | Styles | Rock, Jazz, Electronic |
 | Groove axes | **Intensity** (dynamics) × **Complexity** (how busy) — continuous 0–1 sliders |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
-| Adaptive groove | **Follow** mode maps the energy of the input/guide track onto Intensity/Complexity |
+| Adaptive groove | **Follow** mode maps a guide track's energy onto Intensity/Complexity — route in *any* track via the Sidechain input, or fall back to this effect's own input |
 | BPM / tempo | Reads host transport; **editable BPM** (double-click) otherwise |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
@@ -50,7 +50,7 @@ own tempo when used as a standalone application.
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
 - **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
 - **Intensity / Complexity sliders** — the 2-D groove axes: Intensity is per-hit dynamics, Complexity is how busy the pattern is. Continuous 0–1, replacing the old 3-step density buttons (a visual XY pad is a later UI pass). Disabled and shown live while **Follow** is on (then they're automatic).
-- **Follow toggle** — when on, Intensity/Complexity track the energy of the track feeding the effect instead of the manual sliders.
+- **Follow toggle** — when on, Intensity/Complexity track a guide signal's energy instead of the manual sliders — a different track routed into the Sidechain input if connected, otherwise this effect's own input.
 - **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive groove.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM field** — shows the live tempo (refreshed at 10 Hz). **Double-click to type a tempo** (40–240) — this is how you set the speed in the Standalone. When a DAW transport supplies the tempo the field locks and follows the host.
@@ -66,10 +66,12 @@ so it loads anywhere effects do — including **Adobe Audition's Effects Rack**,
 tracks in Reaper, Ableton Live, Cubase, FL Studio, Bitwig — or run the **Standalone** app and
 press **Play**.
 
-Insert it on a track: it **outputs the generated drums**. With **Follow** on, the track's
-incoming audio is the guide (louder/busier → higher intensity and complexity). Put it on a
-dedicated track for a pure drum machine, or on a part you want it to react to for an adaptive
-groove.
+Insert it on a track: it **outputs the generated drums**. With **Follow** on, it reacts
+to a guide signal (louder/busier → higher intensity and complexity) — ideally a
+*different* track routed in via your host's sidechain input (see
+[Adaptive "Follow" mode](#adaptive-follow-mode) for per-DAW routing), or this track's
+own input as a fallback. Put it on a dedicated track for a pure drum machine, or on a
+part you want it to react to for an adaptive groove.
 
 > Some Adobe hosts have a known VST3 quirk where the custom editor may not render (you get
 > generic parameter sliders). It still loads and plays.
@@ -117,9 +119,8 @@ Style, Intensity/Complexity and Follow behave the same in both modes.
 
 ## Adaptive "Follow" mode
 
-This is a generator effect, so its **audio input is the guide track**. With **Follow**
-enabled, the incoming guide audio is analysed every block and its energy drives
-Intensity and Complexity automatically:
+With **Follow** enabled, a guide signal is analysed every block and its energy
+drives Intensity and Complexity automatically:
 
 - block RMS -> dB -> normalised to 0-1 -> attack/release envelope -> **energy**;
 - energy maps to a **Sparse / Medium / Full** step through a hysteresis band (so it
@@ -127,14 +128,28 @@ Intensity and Complexity automatically:
   mapped onto the continuous **Intensity/Complexity** axes — the same mapping the
   legacy `density` parameter used, so the three points land on exactly the same feel.
 
-Route the part you want the drummer to react to (a vocal, a guitar, a full mix)
-into the track that feeds this effect and turn **Follow** on. Louder/busier guide ->
-higher intensity and complexity; quieter guide -> sparser. With Follow off, the input
-is ignored and the manual **Intensity/Complexity** sliders are used directly. The
-`style` stays manual in both modes.
+**The guide is a track of your choice**, not necessarily this effect's own input:
 
-> Put the effect on the track whose audio should steer the drums. When the input
-> is silent the energy falls to zero (Sparse).
+- **Route a different track in (recommended)** — the plugin exposes a disabled-by-default
+  stereo **Sidechain** input bus. Route the part you want the drummer to react to (a
+  vocal, a guitar, a full mix) into it via your host's sidechain/send routing, and it
+  takes priority as the guide the moment it's connected.
+  - **Adobe Audition:** Multitrack → Track → *Add Stereo Bus Track*; on the source
+    track's **S1** send, route it to that bus; on Adaptive Drummer's own send box,
+    pick **Sidechain routing** to feed the bus into this effect's Sidechain input.
+    (Audition has had occasional bus-routing reliability issues in some versions —
+    if the guide doesn't respond, try re-doing the send.)
+  - **Reaper / Ableton Live / Cubase / Studio One / FL Studio / Bitwig:** use the
+    host's normal sidechain-input picker on the plugin (exact wording varies by host).
+- **No sidechain connected** — falls back to analysing this effect's own input (put
+  it on the track you want it to react to). **Standalone** has no "other track", so
+  it always uses this fallback.
+
+With Follow off, no guide is analysed and the manual **Intensity/Complexity** sliders
+are used directly. The `style` stays manual in both modes.
+
+> When there's no guide at all (nothing routed in, and the main input is silent or
+> disabled), the energy falls to zero (Sparse).
 
 ---
 
