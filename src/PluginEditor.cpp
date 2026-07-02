@@ -169,9 +169,9 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.setFont (juce::Font (10.0f));
     g.setColour (kMuted);
     g.drawText ("STYLE",   12, 36,  60, 12, juce::Justification::left);
-    g.drawText ("FOLLOW",  12, 144, 60, 12, juce::Justification::left);
-    g.drawText ("ENERGY",  energyMeterBounds.getX(), 144, 80, 12, juce::Justification::left);
-    g.drawText ("SOUND",   12, 200, 60, 12, juce::Justification::left);
+    g.drawText ("FOLLOW",  12, 176, 60, 12, juce::Justification::left);
+    g.drawText ("ENERGY",  energyMeterBounds.getX(), 176, 80, 12, juce::Justification::left);
+    g.drawText ("SOUND",   12, 232, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
