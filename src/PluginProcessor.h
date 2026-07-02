@@ -12,8 +12,10 @@
  * Reads host BPM from the DAW playhead; falls back to the "bpm" parameter.
  *
  * Built as an audio effect / generator: it outputs drums, and when "follow" is on
- * the 2-D groove axes track the energy of the incoming audio (the host track /
- * guide) instead of the manual "intensity"/"complexity" parameters.
+ * the 2-D groove axes track the energy of a guide signal instead of the manual
+ * "intensity"/"complexity" parameters. The guide is a user-chosen *other* track
+ * routed into the (disabled-by-default) Sidechain bus when connected; otherwise
+ * it falls back to this effect's own input.
  *
  * Parameters (managed by apvts, not exhaustive):
  *   bpm         float  40-240  default 120   manual BPM (ignored when host provides tempo)

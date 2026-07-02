@@ -40,11 +40,17 @@ public:
     {
         juce::ScopedJuceInitialiser_GUI guiInit;
 
+        // The processor now declares two input buses (main + Sidechain), so a
+        // structurally complete layout needs an entry for both — checkBusesLayoutSupported()
+        // itself rejects a layout with the wrong number of buses before our
+        // isBusesLayoutSupported() override ever runs. Existing main-bus-only
+        // tests get a disabled Sidechain (its default), unaffected by their intent.
         auto makeLayout = [] (juce::AudioChannelSet in, juce::AudioChannelSet out)
         {
             juce::AudioProcessor::BusesLayout layout;
             layout.inputBuses.add (in);
             layout.outputBuses.add (out);
+            layout.inputBuses.add (juce::AudioChannelSet::disabled());   // Sidechain, off
             return layout;
         };
 
@@ -76,6 +82,83 @@ public:
             expect (! proc.checkBusesLayoutSupported (
                         makeLayout (juce::AudioChannelSet::disabled(), juce::AudioChannelSet::quadraphonic())),
                     "disabled in / quad out must be rejected");
+        }
+
+        beginTest ("bus layouts — sidechain configurations");
+        {
+            AdaptiveDrummerProcessor proc;
+
+            auto makeSidechainLayout = [] (juce::AudioChannelSet sidechain)
+            {
+                juce::AudioProcessor::BusesLayout layout;
+                layout.inputBuses.add (juce::AudioChannelSet::stereo());
+                layout.outputBuses.add (juce::AudioChannelSet::stereo());
+                layout.inputBuses.add (sidechain);
+                return layout;
+            };
+
+            expect (proc.checkBusesLayoutSupported (makeSidechainLayout (juce::AudioChannelSet::disabled())),
+                    "disabled sidechain must be accepted (the default)");
+            expect (proc.checkBusesLayoutSupported (makeSidechainLayout (juce::AudioChannelSet::mono())),
+                    "mono sidechain must be accepted");
+            expect (proc.checkBusesLayoutSupported (makeSidechainLayout (juce::AudioChannelSet::stereo())),
+                    "stereo sidechain must be accepted");
+            expect (! proc.checkBusesLayoutSupported (makeSidechainLayout (juce::AudioChannelSet::quadraphonic())),
+                    "a quadraphonic sidechain must be rejected");
+        }
+
+        beginTest ("Follow prioritises a connected Sidechain bus over the main input");
+        {
+            // Proves the guide is genuinely read from the Sidechain bus (a
+            // user-chosen *other* track), not the effect's own input: the main
+            // input stays silent throughout, only the Sidechain carries a loud
+            // tone, and Follow's energy must still rise.
+            AdaptiveDrummerProcessor proc;
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // main in (left silent)
+            layout.outputBuses.add (juce::AudioChannelSet::stereo());   // main out
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // sidechain, enabled
+            expect (proc.setBusesLayout (layout), "the 3-bus (sidechain-enabled) layout must be settable");
+
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+
+            const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
+            expectEquals (totalChannels, 4, "main (2ch) + sidechain (2ch) must total 4 input channels");
+
+            juce::AudioBuffer<float> buffer (totalChannels, blockSize);
+            juce::MidiBuffer midi;
+
+            double phase = 0.0;
+            const double phaseInc = juce::MathConstants<double>::twoPi * 440.0 / sampleRate;
+
+            for (int b = 0; b < 40; ++b)
+            {
+                buffer.clear();   // channels 0-1 (main in) stay silent
+                for (int ch = 2; ch < 4; ++ch)   // channels 2-3 = Sidechain bus
+                {
+                    float* d = buffer.getWritePointer (ch);
+                    double  p = phase;
+                    for (int i = 0; i < blockSize; ++i)
+                    {
+                        d[i] = 0.9f * (float) std::sin (p);
+                        p += phaseInc;
+                    }
+                }
+                phase += phaseInc * blockSize;
+
+                proc.processBlock (buffer, midi);
+            }
+
+            expectGreaterThan (proc.getEnergy(), 0.3f,
+                                "a loud Sidechain guide must raise the followed energy even "
+                                "though the main input is silent");
+
+            proc.releaseResources();
         }
 
         beginTest ("processBlock renders finite, audible audio while playing");

@@ -55,8 +55,9 @@ AdaptiveDrummerProcessor::createParameterLayout()
 
 AdaptiveDrummerProcessor::AdaptiveDrummerProcessor()
     : AudioProcessor (BusesProperties()
-          .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+          .withInput  ("Input",     juce::AudioChannelSet::stereo(), true)
+          .withOutput ("Output",    juce::AudioChannelSet::stereo(), true)
+          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "AdaptiveDrummer", createParameterLayout())
 {}
 
@@ -73,7 +74,20 @@ bool AdaptiveDrummerProcessor::isBusesLayoutSupported (const BusesLayout& layout
     // In-place effect: the input (the host track / guide) matches the output,
     // or is absent for generator-only hosts.
     const auto in = layouts.getMainInputChannelSet();
-    return in.isDisabled() || in == out;
+    if (! (in.isDisabled() || in == out))
+        return false;
+
+    // Sidechain (the followed track): independently disabled, mono, or
+    // stereo — never coupled to the main layout.
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto sidechain = layouts.inputBuses[1];
+        if (! (sidechain.isDisabled() || sidechain == juce::AudioChannelSet::mono()
+               || sidechain == juce::AudioChannelSet::stereo()))
+            return false;
+    }
+
+    return true;
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -105,14 +119,32 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const int  numSamples = buffer.getNumSamples();
     const bool follow     = *apvts.getRawParameterValue ("follow") > 0.5f;
 
-    // This is a generator effect: the host track feeding it is the guide. Analyse
-    // that incoming audio BEFORE the buffer is overwritten with drums.
+    // Guide priority: a connected Sidechain bus (a user-chosen *other* track,
+    // routed in via the host's sidechain/send routing) wins; otherwise fall
+    // back to this effect's own input (today's "monitor mode"); otherwise
+    // there is no guide at all. Analyse BEFORE the buffer is overwritten with
+    // drums — mainOut still holds the live input at this point.
     if (follow)
-        energyAnalyzer.processBlock (mainOut, numSamples);
+    {
+        auto* sidechainBus = getBus (true, 1);
+        const bool sidechainConnected = sidechainBus != nullptr && sidechainBus->isEnabled()
+                                         && sidechainBus->getNumberOfChannels() > 0;
+
+        if (sidechainConnected)
+            energyAnalyzer.processBlock (getBusBuffer (buffer, true, 1), numSamples);
+        else if (auto* mainIn = getBus (true, 0); mainIn != nullptr && mainIn->isEnabled())
+            energyAnalyzer.processBlock (mainOut, numSamples);
+        else
+            energyAnalyzer.processSilence (numSamples);
+    }
     else
         energyAnalyzer.processSilence (numSamples);   // let the meter fall back
 
-    buffer.clear();   // output is the generated drums (input is the guide, now analysed)
+    // Output is the generated drums. Clear only the main-out channels — never
+    // the whole buffer, which would also wipe the Sidechain bus's channels
+    // (some hosts alias buffers, and the Sidechain view above must stay valid
+    // for the rest of this call).
+    mainOut.clear();
 
     // Host transport: BPM takes priority over the manual parameter, and when the
     // transport is rolling the ppq position locks the drummer to the DAW timeline.
