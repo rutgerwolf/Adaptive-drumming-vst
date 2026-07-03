@@ -271,6 +271,85 @@ public:
             proc.releaseResources();
         }
 
+        beginTest ("followAmount == 0 fully bypasses Follow's modulation");
+        {
+            AdaptiveDrummerProcessor proc;
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());
+            layout.outputBuses.add (juce::AudioChannelSet::stereo());
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // sidechain, enabled
+            expect (proc.setBusesLayout (layout), "the 3-bus (sidechain-enabled) layout must be settable");
+
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+            proc.apvts.getParameter ("followAmount")->setValueNotifyingHost (0.0f);   // fully off
+
+            auto* intensityParam = proc.apvts.getParameter ("intensity");
+            intensityParam->setValueNotifyingHost (intensityParam->convertTo0to1 (0.5f));
+            const float base = *proc.apvts.getRawParameterValue ("intensity");
+
+            const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
+            juce::AudioBuffer<float> buffer (totalChannels, blockSize);
+            juce::MidiBuffer midi;
+
+            double phase = 0.0;
+            const double phaseInc = juce::MathConstants<double>::twoPi * 440.0 / sampleRate;
+            for (int b = 0; b < 100; ++b)   // loud guide, long enough that a nonzero amount would clearly show
+            {
+                buffer.clear();
+                for (int ch = 2; ch < 4; ++ch)
+                {
+                    float* d = buffer.getWritePointer (ch);
+                    double p = phase;
+                    for (int i = 0; i < blockSize; ++i) { d[i] = 0.9f * (float) std::sin (p); p += phaseInc; }
+                }
+                phase += phaseInc * blockSize;
+                proc.processBlock (buffer, midi);
+            }
+
+            expectEquals (proc.getCurrentIntensity(), base,
+                          "followAmount == 0 must leave intensity exactly at the grid's base, even with a loud guide");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("followAmount survives state round-trip and defaults to 0.6 when absent from a saved session");
+        {
+            AdaptiveDrummerProcessor proc;
+            auto* amountParam = proc.apvts.getParameter ("followAmount");
+            amountParam->setValueNotifyingHost (amountParam->convertTo0to1 (0.3f));
+
+            juce::MemoryBlock savedState;
+            proc.getStateInformation (savedState);
+
+            AdaptiveDrummerProcessor fresh;
+            fresh.setStateInformation (savedState.getData(), (int) savedState.getSize());
+            expectWithinAbsoluteError ((double) *fresh.apvts.getRawParameterValue ("followAmount"), 0.3, 0.001,
+                                       "followAmount must survive the round-trip");
+
+            // A state saved before this parameter existed (no <PARAM id="followAmount">)
+            // must load with the built-in default on a fresh instance, not some
+            // garbage/zeroed value -- exactly the same APVTS behaviour the
+            // pre-GrooveTable migration test above already relies on.
+            auto xml = juce::AudioProcessor::getXmlFromBinary (savedState.getData(), (int) savedState.getSize());
+            expect (xml != nullptr, "seed state must parse as XML");
+            if (auto* e = xml->getChildByAttribute ("id", "followAmount")) xml->removeChildElement (e, true);
+            expect (xml->getChildByAttribute ("id", "followAmount") == nullptr,
+                    "premise: the pre-Step-21 state must genuinely lack a followAmount element");
+
+            juce::MemoryBlock preStep21State;
+            juce::AudioProcessor::copyXmlToBinary (*xml, preStep21State);
+
+            AdaptiveDrummerProcessor freshOld;
+            freshOld.setStateInformation (preStep21State.getData(), (int) preStep21State.getSize());
+            expectWithinAbsoluteError ((double) *freshOld.apvts.getRawParameterValue ("followAmount"), 0.6, 0.001,
+                                       "a session saved before followAmount existed must load with the 0.6 default");
+        }
+
         beginTest ("Follow off, or on with no guide connected, is an exact manual passthrough");
         {
             // Follow off: the classic case.

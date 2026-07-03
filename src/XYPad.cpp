@@ -64,7 +64,7 @@ void XYPad::paint (juce::Graphics& g)
     g.drawText (xLabel, (int) area.getX(), (int) area.getBottom() - 15,
                (int) area.getWidth() - 4, 12, juce::Justification::right);
 
-    // The draggable dot: dimmed to kMuted while disabled (Follow is live).
+    // The draggable dot: dimmed to kMuted while disabled.
     const float dotX = area.getX() + displayX01 * area.getWidth();
     const float dotY = area.getY() + (1.0f - displayY01) * area.getHeight();   // Y is inverted: 1.0 draws at the top
     constexpr float dotRadius = 6.0f;
@@ -73,6 +73,22 @@ void XYPad::paint (juce::Graphics& g)
     g.fillEllipse (dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
     g.setColour (kText);
     g.drawEllipse (dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f, 1.0f);
+
+    // Follow overlay: a hollow ring at the SAME x (complexity is never
+    // modulated by Follow) but at the effective (modulated) intensity's y,
+    // connected to the actual puck by a thin line. The ring pulses -- grows
+    // and brightens -- with the guide's current accent signal.
+    if (followOverlayActive)
+    {
+        const float ringY     = area.getY() + (1.0f - followIntensity01) * area.getHeight();
+        const float ringRadius = 8.0f + followAccent01 * 6.0f;
+
+        g.setColour (kMuted.withAlpha (0.5f));
+        g.drawLine (dotX, dotY, dotX, ringY, 1.0f);
+
+        g.setColour (kAccent.withAlpha (0.5f + 0.5f * followAccent01));
+        g.drawEllipse (dotX - ringRadius, ringY - ringRadius, ringRadius * 2.0f, ringRadius * 2.0f, 1.5f);
+    }
 }
 
 void XYPad::moveToMouseEvent (const juce::MouseEvent& e)
@@ -144,9 +160,10 @@ void XYPad::mouseDoubleClick (const juce::MouseEvent&)
     repaint();
 }
 
-void XYPad::setDisplayPosition (float xValue01, float yValue01)
+void XYPad::setFollowOverlay (bool active, float intensityEff01, float accent01)
 {
-    displayX01 = juce::jlimit (0.0f, 1.0f, xValue01);
-    displayY01 = juce::jlimit (0.0f, 1.0f, yValue01);
+    followOverlayActive = active;
+    followIntensity01    = juce::jlimit (0.0f, 1.0f, intensityEff01);
+    followAccent01       = juce::jlimit (0.0f, 1.0f, accent01);
     repaint();
 }

@@ -9,6 +9,7 @@
  * Dark UI inspired by GarageBand Drummer:
  *   - Style selector  (Rock / Jazz / Electronic)
  *   - Groove XY pad (Complexity x, Intensity y — the 2-D groove axes)
+ *   - Follow toggle + Follow Amount (guide-driven modulation strength)
  *   - BPM display (host-synced or manual)
  *   - Volume knob
  *   - Sample-load status + browse button
@@ -35,14 +36,20 @@ private:
     juce::TextButton jazzButton       { "Jazz" };
     juce::TextButton electronicButton { "Electronic" };
 
-    // The 2-D groove axes. Disabled (and shown live) while Follow is on, same
-    // as the density buttons/sliders it replaced.
+    // The 2-D groove axes. Stays enabled and draggable while Follow is on --
+    // the grid remains authoritative; Follow's modulation shows as an overlay
+    // on the pad instead of hijacking the puck (see XYPad::setFollowOverlay).
     XYPad groovePad;
 
-    // Follow (adaptive density) + guide-energy meter
+    // Follow (guide-driven accent + intensity modulation) + guide-energy meter
     juce::TextButton     followButton { "Follow" };
     juce::Rectangle<int> energyMeterBounds;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followAttachment;
+
+    // How strongly Follow's modulation applies on top of the grid
+    juce::Slider followAmountSlider;
+    juce::Label  followAmountTitleLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> followAmountAttachment;
 
     // Sound source (synthesised voices vs. WAV samples)
     juce::TextButton sourceSynthButton   { "Synth" };

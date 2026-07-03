@@ -59,6 +59,14 @@ AdaptiveDrummerProcessor::createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "follow", 1 }, "Follow", false));
 
+    // How strongly Follow's guide-driven accent + intensity modulation applies
+    // on top of the grid (see the Follow seam in processBlock()). Version hint
+    // 3: added after intensity/complexity (hint 2). Default 0.6 matches the
+    // fixed depth Follow shipped with before this parameter existed.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "followAmount", 3 }, "Follow Amount",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.6f));
+
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "source", 1 }, "Sound",
         juce::StringArray { "Synth", "Samples" }, 0));
@@ -228,22 +236,22 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     if (follow && guideAvailable)
     {
-        // Step 21 promotes this to a "Follow Amount" APVTS parameter; a fixed
-        // depth for now. Ceilings keep the grid authoritative even at max
-        // Follow strength (0.75 blend ⇒ the grid always keeps >= 25% weight).
-        constexpr float kFollowAmount      = 0.6f;
+        // Ceilings keep the grid authoritative even at max Follow strength
+        // (0.75 blend ⇒ the grid always keeps >= 25% weight).
         constexpr float kMaxIntensityBlend = 0.75f;
         constexpr float kMaxAccentDepth    = 0.40f;
 
-        const float blend = kMaxIntensityBlend * kFollowAmount;
+        const float followAmount = *apvts.getRawParameterValue ("followAmount");
+        const float blend        = kMaxIntensityBlend * followAmount;
         intensityEff = baseIntensity + blend * (energyAnalyzer.getMacroEnergy() - baseIntensity);
         accent01     = energyAnalyzer.getAccent();
-        accentDepth  = kMaxAccentDepth * kFollowAmount;
+        accentDepth  = kMaxAccentDepth * followAmount;
     }
 
     drummer.setComplexity   (baseComplexity);          // always the grid — the hard constraint
     drummer.setIntensity    (intensityEff);
     drummer.setFollowAccent (accent01, accentDepth);
+    guideAvailableState.store (follow && guideAvailable, std::memory_order_relaxed);
 
     currentComplexityState.store (baseComplexity, std::memory_order_relaxed);
     currentIntensityState.store  (intensityEff,   std::memory_order_relaxed);

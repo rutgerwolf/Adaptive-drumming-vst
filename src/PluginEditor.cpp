@@ -15,7 +15,7 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
       groovePad (*p.apvts.getParameter ("complexity"), *p.apvts.getParameter ("intensity"),
                  "COMPLEXITY", "INTENSITY")
 {
-    setSize (420, 562);   // +146px vs. v2: a single square XY pad replaces both slider rows
+    setSize (420, 618);   // +56px vs. v3: a new Follow Amount row
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -47,6 +47,22 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     addAndMakeVisible (followButton);
     followAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
         proc.apvts, "follow", followButton);
+
+    // ── Follow Amount (modulation strength, always attached for automation) ──
+    followAmountTitleLabel.setText ("FOLLOW AMT", juce::dontSendNotification);
+    followAmountTitleLabel.setColour (juce::Label::textColourId, kMuted);
+    followAmountTitleLabel.setFont (juce::Font (10.0f));
+    addAndMakeVisible (followAmountTitleLabel);
+
+    followAmountSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    followAmountSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    followAmountSlider.setColour (juce::Slider::trackColourId,  kAccent);
+    followAmountSlider.setColour (juce::Slider::backgroundColourId, kPanel);
+    followAmountSlider.setColour (juce::Slider::thumbColourId,  kAccent);
+    addAndMakeVisible (followAmountSlider);
+
+    followAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        proc.apvts, "followAmount", followAmountSlider);
 
     // ── Sound source buttons (Synth / Samples) ───────────────────────────────
     for (auto* btn : { &sourceSynthButton, &sourceSamplesButton })
@@ -152,7 +168,7 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.drawText ("GROOVE",  12, 94,  60, 12, juce::Justification::left);
     g.drawText ("FOLLOW",  12, 322, 60, 12, juce::Justification::left);
     g.drawText ("ENERGY",  energyMeterBounds.getX(), 322, 80, 12, juce::Justification::left);
-    g.drawText ("SOUND",   12, 378, 60, 12, juce::Justification::left);
+    g.drawText ("SOUND",   12, 434, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
@@ -197,21 +213,25 @@ void AdaptiveDrummerEditor::resized()
     followButton.setBounds (m, 336, btnW, btnH);
     energyMeterBounds = juce::Rectangle<int> (m + btnW + m, 336, 2 * btnW + m, btnH);
 
-    // Sound source buttons  y=392
-    sourceSynthButton  .setBounds (m,            392, btnW, btnH);
-    sourceSamplesButton.setBounds (m + btnW + m, 392, btnW, btnH);
+    // Follow Amount  y=378/392 (new row: how strongly Follow modulates the grid)
+    followAmountTitleLabel.setBounds (m, 378, 100, 12);
+    followAmountSlider     .setBounds (m, 392, W - 2 * m, btnH);
 
-    // BPM  y=444
-    bpmTitleLabel.setBounds (m,      444, 30, 14);
-    bpmValueLabel.setBounds (m + 30, 440, 80, 28);
+    // Sound source buttons  y=448
+    sourceSynthButton  .setBounds (m,            448, btnW, btnH);
+    sourceSamplesButton.setBounds (m + btnW + m, 448, btnW, btnH);
+
+    // BPM  y=500
+    bpmTitleLabel.setBounds (m,      500, 30, 14);
+    bpmValueLabel.setBounds (m + 30, 496, 80, 28);
 
     // Volume  (right side)
-    volumeTitleLabel.setBounds (W - m - 60 - 14, 444, 30, 14);
-    volumeSlider    .setBounds (W - m - 60,       432, 60, 60);
+    volumeTitleLabel.setBounds (W - m - 60 - 14, 500, 30, 14);
+    volumeSlider    .setBounds (W - m - 60,       488, 60, 60);
 
     // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        522, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  524, W - 140, 20);
+    loadSamplesButton  .setBounds (m,        578, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  580, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -243,14 +263,11 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     jazzButton      .setToggleState (style == 1, juce::dontSendNotification);
     electronicButton.setToggleState (style == 2, juce::dontSendNotification);
 
-    // Groove pad: when Follow is on the axes are chosen by the guide energy,
-    // so show the live adaptive position (a display-only move that doesn't
-    // touch the bound parameters) and disable manual dragging — same pattern
-    // the density buttons/sliders it replaced used.
-    const bool following = *proc.apvts.getRawParameterValue ("follow") > 0.5f;
-    if (following)
-        groovePad.setDisplayPosition (proc.getCurrentComplexity(), proc.getCurrentIntensity());
-    groovePad.setEnabled (! following);
+    // Groove pad stays enabled and draggable throughout — the grid is always
+    // authoritative. While Follow is on and actually modulating (a guide is
+    // connected), show that as an overlay ring instead of moving the puck.
+    const bool followOverlay = proc.isGuideAvailable();
+    groovePad.setFollowOverlay (followOverlay, proc.getCurrentIntensity(), proc.getGuideAccent());
 
     // Sound source buttons
     const bool useSynth = static_cast<int> (*proc.apvts.getRawParameterValue ("source")) == 0;

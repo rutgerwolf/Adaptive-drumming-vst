@@ -80,6 +80,12 @@ public:
         EnergyAnalyzer::getAccent). For the editor's Follow overlay. */
     float getGuideAccent () const noexcept { return energyAnalyzer.getAccent(); }
 
+    /** True this block iff Follow is on AND a guide (Sidechain or main input)
+        is actually connected -- i.e. iff Follow is modulating anything right
+        now. For the editor's Follow overlay (show it only when there's
+        something to show). */
+    bool isGuideAvailable () const noexcept { return guideAvailableState.load (std::memory_order_relaxed); }
+
     /** The 2-D groove axes actually in use this block: complexity is always
         the grid's; intensity is the grid's base, modulated toward the guide
         when Follow is on and connected. Readable from the editor for the XY
@@ -99,6 +105,7 @@ private:
     std::atomic<bool>   bpmFromHost            { false };
     std::atomic<float>  currentComplexityState { 0.55f };   // mask-equivalent to legacy Medium
     std::atomic<float>  currentIntensityState  { 0.55f };
+    std::atomic<bool>   guideAvailableState    { false };
 
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
 
