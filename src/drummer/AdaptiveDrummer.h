@@ -45,6 +45,13 @@ public:
     void prepare (double sampleRate, int blockSize);
     void reset   ();
 
+    /** Rewinds the in-pattern playhead and bar counter to the start, like
+        reset() — but, unlike reset(), leaves the engines' active voices
+        alone. Call once on the playing-transport-stops edge; follow with
+        renderTails() each subsequent stopped block so a ringing tail (e.g.
+        the crash decay) finishes naturally instead of being cut off. */
+    void rewindPlayhead() noexcept;
+
     /** Requests a style; the switch is applied at the next step-0 bar wrap
         (or immediately if the playhead is already at step 0 / just reset). */
     void setStyle   (DrumPattern::Style   style);
@@ -61,8 +68,10 @@ public:
     void setFollowAccent (float accent01, float depth01) noexcept;
 
     /** Choose the sound source: synthesised voices (no samples needed) or the
-        WAV sampler. */
-    void setUseSynth (bool shouldUseSynth) noexcept { useSynth = shouldUseSynth; }
+        WAV sampler. Switching resets the engine being switched *away from*,
+        so its voices don't sit frozen mid-decay and resume audibly if the
+        source is toggled back. */
+    void setUseSynth (bool shouldUseSynth) noexcept;
     bool isUsingSynth() const noexcept { return useSynth; }
 
     /** Host transport state for the next block. When isPlaying and
@@ -77,6 +86,11 @@ public:
 
     /** Add drum audio into outBuffer (caller must clear buffer first). */
     void processBlock (juce::AudioBuffer<float>& outBuffer, int numSamples);
+
+    /** Decays whatever voices are already active without firing new triggers
+        or advancing the playhead/bar counter. Call instead of processBlock()
+        while the transport is stopped (see rewindPlayhead()). */
+    void renderTails (juce::AudioBuffer<float>& outBuffer, int numSamples);
 
     double               getBpm()     const noexcept { return bpm; }
 

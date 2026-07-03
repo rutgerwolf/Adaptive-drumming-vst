@@ -33,6 +33,15 @@ void AdaptiveDrummer::reset()
     // at step 0, so the next processBlock() applies it before the first trigger.
 }
 
+void AdaptiveDrummer::rewindPlayhead() noexcept
+{
+    playheadSample       = 0.0;
+    lastRenderedPlayhead = 0;
+    barIndex             = 0;
+    // Deliberately does not touch drumSampler/drumSynth — see the header
+    // comment: this is the stop-edge rewind, not a full silence-reset.
+}
+
 void AdaptiveDrummer::setStyle (DrumPattern::Style style)
 {
     // Record only — applied at the next step-0 bar wrap by processBlock().
@@ -71,6 +80,22 @@ void AdaptiveDrummer::setComplexity (float complexity01) noexcept
 void AdaptiveDrummer::setIntensity (float intensity01) noexcept
 {
     drumPattern.setIntensity (intensity01);
+}
+
+void AdaptiveDrummer::setUseSynth (bool shouldUseSynth) noexcept
+{
+    if (shouldUseSynth == useSynth)
+        return;
+
+    // Silence the engine being switched away from, so its voices don't sit
+    // frozen mid-decay and resume audibly (with a stale envelope position)
+    // if the source is toggled back later.
+    if (useSynth)
+        drumSynth.reset();
+    else
+        drumSampler.reset();
+
+    useSynth = shouldUseSynth;
 }
 
 void AdaptiveDrummer::setFollowAccent (float accent01, float depth01) noexcept
@@ -197,4 +222,12 @@ void AdaptiveDrummer::processBlock (juce::AudioBuffer<float>& outBuffer, int num
     // tile the pattern with no gap or overlap.
     playheadSample = std::fmod (playheadSample + static_cast<double> (numSamples),
                                 static_cast<double> (patternLen));
+}
+
+void AdaptiveDrummer::renderTails (juce::AudioBuffer<float>& outBuffer, int numSamples)
+{
+    if (useSynth)
+        drumSynth.renderTail (outBuffer, numSamples, currentSampleRate);
+    else
+        drumSampler.renderTail (outBuffer, numSamples);
 }

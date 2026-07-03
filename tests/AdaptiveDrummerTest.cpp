@@ -2,6 +2,7 @@
 #include "drummer/AdaptiveDrummer.h"
 
 #include <cmath>
+#include <limits>
 
 /**
  * Tests for B3 — mapping the host ppq position to an in-pattern sample offset
@@ -255,6 +256,103 @@ public:
             d2.processBlock (buf, blockSize);
             expect (d2.getStyle() == DrumPattern::Style::Electronic,
                     "a style requested before playback starts must apply at bar 0");
+        }
+
+        beginTest ("stop mid-decay — renderTails lets a ringing voice decay naturally (Step 8)");
+        {
+            // Rock/Full guarantees a crash on step 0 (DrumSynth's ~1.2 s noise
+            // decay) — plenty of tail to observe. rewindPlayhead() + renderTails()
+            // is what PluginProcessor now calls instead of reset() every stopped
+            // block; this pins that the tail keeps sounding for a while after the
+            // stop edge (the old reset()-every-block code went silent on the very
+            // next block) and that its envelope only ever decays, never jumps back
+            // up, before eventually settling to silence. (A raw sample-to-sample
+            // delta check isn't meaningful here — the crash voice is differentiated
+            // white noise, whose adjacent samples are large and uncorrelated by
+            // design, stopped or not; the envelope is the honest signal.)
+            const double sr        = 44100.0;
+            const int    blockSize = 512;
+
+            AdaptiveDrummer d;
+            d.prepare (sr, blockSize);
+            d.setUseSynth (true);
+            d.setStyle    (DrumPattern::Style::Rock);
+            d.setDensity  (DrumPattern::Density::Full);
+            d.setHostTimeline (false, false, 0.0);   // free-run, like Standalone
+
+            juce::AudioBuffer<float> buf (2, blockSize);
+            buf.clear();
+            d.processBlock (buf, blockSize);   // triggers step 0 (crash etc.)
+            expectGreaterThan (buf.getMagnitude (0, blockSize), 0.01f,
+                               "step 0 hit must be audible before stopping");
+
+            // Simulate the transport-stop edge: rewind once, then keep decaying.
+            d.rewindPlayhead();
+
+            const int tailBlocks = 200;   // ~2.3 s — longer than the ~1.2 s crash decay
+            float     peakSoFar  = std::numeric_limits<float>::max();
+            bool      everAudibleRightAfterStop = false;
+            bool      everSilent                = false;
+            bool      envelopeRoseAfterDecaying = false;
+
+            for (int b = 0; b < tailBlocks; ++b)
+            {
+                buf.clear();
+                d.renderTails (buf, blockSize);
+                const float blockPeak = buf.getMagnitude (0, blockSize);
+
+                if (b < 3 && blockPeak > 0.01f)
+                    everAudibleRightAfterStop = true;
+
+                // Once the envelope has clearly started decaying (dropped well
+                // below the initial hit), it must never climb back toward that
+                // initial level — that would mean a voice got re-triggered
+                // instead of only ever decaying.
+                if (peakSoFar < 0.1f && blockPeak > peakSoFar * 4.0f)
+                    envelopeRoseAfterDecaying = true;
+                peakSoFar = juce::jmin (peakSoFar, blockPeak);
+
+                if (blockPeak < 1.0e-4f)
+                    everSilent = true;
+            }
+
+            expect (everAudibleRightAfterStop,
+                    "the tail must still be audible for the first few blocks after stopping, "
+                    "not cut to silence on the very next block");
+            expect (! envelopeRoseAfterDecaying,
+                    "the envelope must only ever decay while stopped, never jump back up");
+            expect (everSilent, "the tail must eventually decay to silence");
+        }
+
+        beginTest ("toggling source mid-decay resets the deactivated engine (Step 8)");
+        {
+            // setUseSynth() must silence whichever engine is switched away from,
+            // so a toggle-and-back doesn't resume a frozen tail. renderTails()
+            // never fires new triggers, so any sound it produces right after the
+            // toggle-back can only be a leftover resumed fragment.
+            const double sr        = 44100.0;
+            const int    blockSize = 512;
+
+            AdaptiveDrummer d;
+            d.prepare (sr, blockSize);
+            d.setUseSynth (true);
+            d.setStyle    (DrumPattern::Style::Rock);
+            d.setDensity  (DrumPattern::Density::Full);
+            d.setHostTimeline (false, false, 0.0);
+
+            juce::AudioBuffer<float> buf (2, blockSize);
+            buf.clear();
+            d.processBlock (buf, blockSize);   // triggers step 0, synth now ringing
+            expectGreaterThan (buf.getMagnitude (0, blockSize), 0.01f,
+                               "step 0 hit must be audible before toggling");
+
+            d.setUseSynth (false);   // switch away from synth mid-decay
+            d.setUseSynth (true);    // ...and back, before the crash would have finished
+
+            buf.clear();
+            d.renderTails (buf, blockSize);
+            expectEquals (buf.getMagnitude (0, blockSize), 0.0f,
+                          "toggling away and back must reset the synth, not resume a frozen tail");
         }
     }
 };

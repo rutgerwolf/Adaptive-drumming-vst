@@ -136,6 +136,18 @@ void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
     mixVoices (outBuffer, numSamples);
 }
 
+void DrumSampler::renderTail (juce::AudioBuffer<float>& outBuffer, int numSamples)
+{
+    // No trigger computation at all — fires nothing new, only decays whatever
+    // is already active. Used while the transport is stopped so a ringing
+    // tail finishes naturally instead of being cut off. Still needs the lock:
+    // mixVoices reads sampleSet, which loadSamples() may be mid-swap on.
+    const juce::SpinLock::ScopedTryLockType sl (sampleLock);
+    if (! sl.isLocked()) return;
+
+    mixVoices (outBuffer, numSamples);
+}
+
 void DrumSampler::reset()
 {
     for (auto& perVoice : voices)

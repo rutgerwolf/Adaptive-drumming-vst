@@ -10,6 +10,9 @@ out/
 *.user
 *.swp
 
+# Claude Code tooling (agent worktrees, local session state)
+.claude/
+
 # OS cruft
 .DS_Store
 Thumbs.db

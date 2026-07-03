@@ -469,6 +469,67 @@ public:
             proc.releaseResources();
         }
 
+        beginTest ("getTailLengthSeconds reports a nonzero tail (Step 8)");
+        {
+            AdaptiveDrummerProcessor proc;
+            expectGreaterThan (proc.getTailLengthSeconds(), 0.0,
+                               "a zero tail tells hosts to cut audio immediately on stop, "
+                               "which is exactly the click this step fixes");
+        }
+
+        beginTest ("stopping the transport lets a ringing tail decay instead of cutting off (Step 8)");
+        {
+            AdaptiveDrummerProcessor proc;
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            proc.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+            proc.prepareToPlay (sampleRate, blockSize);
+
+            // Full complexity on Rock guarantees a crash on step 0 (~1.2 s decay
+            // in DrumSynth), so there's something to still be ringing once the
+            // transport stops one block later.
+            proc.apvts.getParameter ("complexity")->setValueNotifyingHost (1.0f);
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+
+            auto anySampleAudible = [&]
+            {
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    const float* d = buffer.getReadPointer (ch);
+                    for (int i = 0; i < blockSize; ++i)
+                        if (std::abs (d[i]) > 1.0e-3f)
+                            return true;
+                }
+                return false;
+            };
+
+            buffer.clear();
+            proc.processBlock (buffer, midi);
+            expect (anySampleAudible(), "step 0 hit must be audible before stopping");
+
+            // Stop the transport mid-decay.
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (0.0f);
+
+            bool everAudibleAfterStop = false;
+            for (int b = 0; b < 20 && ! everAudibleAfterStop; ++b)
+            {
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+                everAudibleAfterStop = anySampleAudible();
+            }
+
+            expect (everAudibleAfterStop,
+                    "a ringing tail must keep decaying for a few blocks after the transport "
+                    "stops, not go silent on the very next block");
+
+            proc.releaseResources();
+        }
+
         beginTest ("host isPlaying without a ppq position still produces audio (Finding #6)");
         {
             AdaptiveDrummerProcessor proc;

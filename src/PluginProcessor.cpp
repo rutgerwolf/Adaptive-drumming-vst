@@ -122,6 +122,7 @@ void AdaptiveDrummerProcessor::prepareToPlay (double sampleRate, int samplesPerB
 {
     drummer.prepare (sampleRate, samplesPerBlock);
     energyAnalyzer.prepare (sampleRate, samplesPerBlock);
+    wasPlaying = false;
 
     volumeSmoothed.reset (sampleRate, 0.02);   // 20 ms ramp
     volumeSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("volume"));
@@ -256,11 +257,23 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     currentComplexityState.store (baseComplexity, std::memory_order_relaxed);
     currentIntensityState.store  (intensityEff,   std::memory_order_relaxed);
 
-    // Generate drums into the main output bus (silence + rewind when stopped).
+    // Generate drums into the main output bus. Stopping used to hard-reset
+    // the drummer every stopped block, truncating a ringing tail (e.g. the
+    // crash decay) with a click. Instead: rewind the playhead once, right on
+    // the stop edge, then keep decaying whatever's still active — via
+    // renderTails(), which fires nothing new — for as long as the transport
+    // stays stopped.
     if (playing)
+    {
         drummer.processBlock (mainOut, numSamples);
+    }
     else
-        drummer.reset();
+    {
+        if (wasPlaying)
+            drummer.rewindPlayhead();
+        drummer.renderTails (mainOut, numSamples);
+    }
+    wasPlaying = playing;
 
     // Volume — smoothed to avoid zipper noise when the knob moves (A3).
     volumeSmoothed.setTargetValue (*apvts.getRawParameterValue ("volume"));

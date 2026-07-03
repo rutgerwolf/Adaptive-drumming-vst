@@ -52,7 +52,7 @@ public:
     bool acceptsMidi ()                        const override { return false; }
     bool producesMidi ()                       const override { return false; }
     bool isMidiEffect ()                       const override { return false; }
-    double getTailLengthSeconds ()             const override { return 0.0; }
+    double getTailLengthSeconds ()             const override { return 1.5; }   // covers the ~1.2 s crash decay
 
     int  getNumPrograms ()                             override { return 1; }
     int  getCurrentProgram ()                          override { return 0; }
@@ -101,6 +101,7 @@ private:
 
     AdaptiveDrummer  drummer;
     EnergyAnalyzer   energyAnalyzer;
+    bool             wasPlaying { false };   // audio-thread only; edge-detects transport stop
     std::atomic<double> currentBpm             { 120.0 };
     std::atomic<bool>   bpmFromHost            { false };
     std::atomic<float>  currentComplexityState { 0.55f };   // mask-equivalent to legacy Medium
