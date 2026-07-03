@@ -58,12 +58,14 @@ This roadmap turns the architecture in `docs/ARCHITECTURE_2D_FOLLOW.md` (Candida
 | 11 | GrooveTable data model + seeded-hash firing + bar-latched style | **D1 no velocity data (high)**, mid-bar structural change (low) | L |
 | 12 | Params & state migration: intensity/complexity, stateVersion=2, density macro, grooveSeed | no state-version marker (low) | M |
 | 13 | Sidechain bus + gated guide selection | **no sidechain bus (high)**, analyse-disabled-input (low) | M |
-| 14 | Follow 2-D mapping: energy→intensity, onset-rate→complexity | follow quantized through 3-step density (low) | M |
+| 14 | ~~Follow 2-D mapping: energy→intensity, onset-rate→complexity~~ **superseded, see below** | follow quantized through 3-step density (low) | M |
 | 15 | Sampler failure-path integrity | loadSamples corrupts kit state (med) | S |
 | 16 | Sampler resampling at load | pitched/off-tempo kits (med) | S |
 | 17 | Async kit loading | blocking I/O in prepare/setState (low) | M |
 | 18 | Jazz re-author: swing + velocities | Jazz genre-wrong (low) | S |
 | 19 | `TableExchange` mailbox (dormant) + optional MIDI-out leaf | — (future-proofing) | M |
+| 20 | Grid-preserving Follow core: accent + macro signals, velocity modulation | replaces Step 14 (`ARCHITECTURE_FOLLOW_V2.md`) | M/L |
+| 21 | `followAmount` parameter + XY-pad follow overlay | replaces Step 14 (`ARCHITECTURE_FOLLOW_V2.md`) | S/M |
 
 ---
 
@@ -355,6 +357,14 @@ This roadmap turns the architecture in `docs/ARCHITECTURE_2D_FOLLOW.md` (Candida
 
 ## Step 14 — Follow 2-D mapping: energy→intensity, onset-rate→complexity
 
+> **Superseded.** This step was never built as written, and on reflection its shape
+> was wrong: it still made Follow a full *replacement* of both axes (just continuous
+> instead of 3-step), which the user later rejected — the grid must stay authoritative
+> and Follow must never touch complexity at all. The shipped design (steps 20–21,
+> below) replaces this step in full: see
+> [`ARCHITECTURE_FOLLOW_V2.md`](ARCHITECTURE_FOLLOW_V2.md). The original text is kept
+> below for history.
+
 **Goal.** Retire the density-collapse follow path (confirmed low: `PluginProcessor.cpp:144-148` quantizes continuous energy through the 3-step density). Followed values steer the two axes directly.
 
 **Files.** `src/drummer/EnergyAnalyzer.h/.cpp`; `src/PluginProcessor.cpp/.h`; `src/PluginEditor.cpp` (readouts); `tests/EnergyAnalyzerTest.cpp`, `tests/AdaptiveDrummerProcessorTest.cpp`.
@@ -488,9 +498,9 @@ This roadmap turns the architecture in `docs/ARCHITECTURE_2D_FOLLOW.md` (Candida
 | Blocking I/O in prepare/setState (low) | Step 17 |
 | Synth↔Samples toggle stale tails (low) | Step 8 |
 | Follow analyses disabled input (low) | Step 13 |
-| Mid-bar structural changes (low) | Step 11 (bar latch) + Step 14 (followed complexity latch) |
+| Mid-bar structural changes (low) | Step 11 (bar latch) + ~~Step 14~~ Step 20 made this moot: Follow no longer touches complexity, so no followed-complexity latch is needed at all |
 | Jazz genre-wrong, no swing (low) | Step 3 (hook) + Step 11 (per-style swing) + Step 18 (content) |
-| Follow quantized through 3-step density (low) | Step 14 |
+| Follow quantized through 3-step density (low) | ~~Step 14~~ Step 20 (`ARCHITECTURE_FOLLOW_V2.md`) — the 3-step density machine is deleted, not just unquantized |
 | No state-version marker (low) | Step 12 |
 | No C1 concurrency test (low) | Step 1 (re-exercised in Steps 7, 17) |
-| No processor-level test (low) | Step 2 (extended in Steps 8, 12, 13, 14, 17) |
+| No processor-level test (low) | Step 2 (extended in Steps 8, 12, 13, 20, 21, 17) |

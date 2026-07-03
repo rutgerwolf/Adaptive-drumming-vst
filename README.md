@@ -17,7 +17,7 @@ own tempo when used as a standalone application.
 | Styles | Rock, Jazz, Electronic |
 | Groove axes | **Intensity** (dynamics) × **Complexity** (how busy) — one draggable XY pad, continuous 0–1 |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
-| Adaptive groove | **Follow** mode maps a guide track's energy onto Intensity/Complexity — route in *any* track via the Sidechain input, or fall back to this effect's own input |
+| Adaptive groove | **Follow** mode layers guide-driven accents + intensity on top of the grid (which never overrides it) — route in *any* track via the Sidechain input, or fall back to this effect's own input; strength set by **Follow Amount** |
 | BPM / tempo | Reads host transport; **editable BPM** (double-click) otherwise |
 | Sample engine | Salamander Drumkit (WAV), stereo mix |
 | State persistence | Full APVTS XML save/restore |
@@ -42,20 +42,24 @@ own tempo when used as a standalone application.
 │  └───────────────────────┘                         │
 │                                                     │
 │  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
+│                                                     │
+│  FOLLOW AMT                                        │
+│  ▬▬▬▬▬▬▬▬▬▬●▬▬▬▬▬▬▬▬▬                              │
 │  Sound   [ Synth ] [ Samples ]                      │
 ├─────────────────────────────────────────────────────┤
 │  BPM  120.0  (type to set)          Volume ◎        │
 ├─────────────────────────────────────────────────────┤
 │  [Load samples...]      Samples loaded              │
 └─────────────────────────────────────────────────────┘
-         420 × 562 px
+         420 × 618 px
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
 - **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
-- **Groove XY pad** — the 2-D groove axes in one draggable pad: X is Complexity (how busy), Y is Intensity (per-hit dynamics), matching GarageBand Drummer's own X/Y grid. Drag anywhere in the pad to set both at once; double-click resets to the default (0.55, 0.55). Disabled and shown live while **Follow** is on (then it's automatic).
-- **Follow toggle** — when on, Intensity/Complexity track a guide signal's energy instead of manual dragging — a different track routed into the Sidechain input if connected, otherwise this effect's own input.
-- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive groove.
+- **Groove XY pad** — the 2-D groove axes in one draggable pad: X is Complexity (how busy), Y is Intensity (per-hit dynamics), matching GarageBand Drummer's own X/Y grid. Drag anywhere in the pad to set both at once; double-click resets to the default (0.55, 0.55). **Always stays enabled and draggable, including while Follow is on** — the grid is always authoritative; Follow's live modulation shows as a small ring overlay instead of moving the pad.
+- **Follow toggle** — when on, a connected guide track adds accents and shifts intensity up/down *on top of* the grid — it never changes the grid's complexity or replaces its intensity outright. A different track routed into the Sidechain input if connected, otherwise this effect's own input.
+- **Follow Amount** — how strongly Follow's modulation applies, 0 (off) to 1 (strongest); always automatable, even while Follow itself is off.
+- **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; feeds the adaptive modulation.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM field** — shows the live tempo (refreshed at 10 Hz). **Double-click to type a tempo** (40–240) — this is how you set the speed in the Standalone. When a DAW transport supplies the tempo the field locks and follows the host.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
@@ -71,8 +75,9 @@ tracks in Reaper, Ableton Live, Cubase, FL Studio, Bitwig — or run the **Stand
 press **Play**.
 
 Insert it on a track: it **outputs the generated drums**. With **Follow** on, it reacts
-to a guide signal (louder/busier → higher intensity and complexity) — ideally a
-*different* track routed in via your host's sidechain input (see
+to a guide signal (accents on transients, louder → more intense) on top of whatever
+groove the XY pad is set to — ideally a *different* track routed in via your host's
+sidechain input (see
 [Adaptive "Follow" mode](#adaptive-follow-mode) for per-DAW routing), or this track's
 own input as a fallback. Put it on a dedicated track for a pure drum machine, or on a
 part you want it to react to for an adaptive groove.
@@ -93,12 +98,13 @@ a nested folder" layout is correct and required.
 | ID | Type | Range | Default | Description |
 |---|---|---|---|---|
 | `style` | Choice | 0 Rock · 1 Jazz · 2 Electronic | 0 | Groove style |
-| `intensity` | Float | 0–1 (step 0.01) | 0.55 | Dynamics axis — per-hit velocity (used when Follow is off) |
-| `complexity` | Float | 0–1 (step 0.01) | 0.55 | Structural axis — how busy the pattern is (used when Follow is off) |
+| `intensity` | Float | 0–1 (step 0.01) | 0.55 | Dynamics axis — per-hit velocity. Always the grid's base value; Follow modulates *around* it, never replaces it |
+| `complexity` | Float | 0–1 (step 0.01) | 0.55 | Structural axis — how busy the pattern is. **Always** the grid's value — Follow never touches it, on or off |
 | `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Legacy; kept registered for parameter-ID stability. No longer read by `processBlock()`, only used to migrate a pre-2.0 saved session's `intensity`/`complexity` |
 | `bpm` | Float | 40–240 (step 0.1) | 120 | Tempo; **editable in the UI** (double-click the BPM field). Host tempo overrides it when present |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
-| `follow` | Bool | off · on | off | Adaptive intensity/complexity from the guide track (overrides the XY pad) |
+| `follow` | Bool | off · on | off | Guide-driven accent + intensity modulation layered on top of the grid (see [Adaptive "Follow" mode](#adaptive-follow-mode)) |
+| `followAmount` | Float | 0–1 (step 0.01) | 0.6 | How strongly Follow's modulation applies; 0 = full bypass |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
 | `play` | Bool | off · on | off | Transport: generate drums (also driven by the host transport) |
 
@@ -123,14 +129,26 @@ Style, Intensity/Complexity and Follow behave the same in both modes.
 
 ## Adaptive "Follow" mode
 
-With **Follow** enabled, a guide signal is analysed every block and its energy
-drives Intensity and Complexity automatically:
+With **Follow** enabled, a guide signal is analysed every block, but it never
+overrides the XY pad — the grid always sets the base groove (which cells fire is
+always the grid's `complexity`; nothing else can change that). Follow instead
+layers two bounded, velocity-only modulations on top of it:
 
-- block RMS -> dB -> normalised to 0-1 -> attack/release envelope -> **energy**;
-- energy maps to a **Sparse / Medium / Full** step through a hysteresis band (so it
-  rises and falls smoothly instead of chattering at the thresholds), which is then
-  mapped onto the continuous **Intensity/Complexity** axes — the same mapping the
-  legacy `density` parameter used, so the three points land on exactly the same feel.
+- **Accents** — a fast/slow envelope pair on the guide's level detects transient
+  moments (louder *than the guide's own recent level*, not an absolute threshold).
+  A detected accent nudges the velocity of whatever the pattern is playing at that
+  instant, weighted by role: the authored emphasis hits (kick 1, backbeats, crash)
+  swing the most, ghost notes are untouched, everything else leans in modestly.
+- **Intensity contour** — a slower envelope of the guide's phrase-level loudness
+  pulls the effective intensity toward itself, blended around the grid's `intensity`
+  value. The grid always keeps at least 25% authority, even at maximum Follow
+  strength, so a loud or silent guide shifts the feel without ever fully taking over.
+
+**Follow Amount** (0–1, default 0.6) scales both modulations together — 0 is a full
+bypass (Follow behaves exactly as if it were off), higher values lean harder on the
+guide. This mirrors GarageBand/Logic Drummer's own Follow-strength slider, which
+also keeps its X/Y pad authoritative and only lets the followed track shape a bounded
+part of the groove.
 
 **The guide is a track of your choice**, not necessarily this effect's own input:
 
@@ -149,11 +167,13 @@ drives Intensity and Complexity automatically:
   it on the track you want it to react to). **Standalone** has no "other track", so
   it always uses this fallback.
 
-With Follow off, no guide is analysed and the manual **Intensity/Complexity** XY pad
-is used directly. The `style` stays manual in both modes.
+With Follow off, or on with no guide connected at all (nothing routed in, and the
+main input disabled), Follow modulates nothing — the manual **Intensity/Complexity**
+XY pad is used exactly as set, a plain passthrough. The `style` stays manual in both
+modes.
 
-> When there's no guide at all (nothing routed in, and the main input is silent or
-> disabled), the energy falls to zero (Sparse).
+> A guide that *is* connected but silent still modulates — intensity eases down and
+> accents stop, the same way a drummer plays quieter when the band drops out.
 
 ---
 
@@ -316,7 +336,7 @@ Adaptive-drumming-vst\
 │   └── samples\salamander\           # Salamander Drumkit (not in repo)
 ├── src\
 │   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, transport, state I/O
-│   ├── PluginEditor.h/.cpp           # 420×562 UI (incl. Follow + energy meter)
+│   ├── PluginEditor.h/.cpp           # 420×618 UI (incl. Follow + energy meter)
 │   ├── XYPad.h/.cpp                  # Draggable 2-D groove pad (Complexity x Intensity)
 │   └── drummer\
 │       ├── AdaptiveDrummer.h/.cpp    # Orchestrator
@@ -325,11 +345,23 @@ Adaptive-drumming-vst\
 │       ├── GrooveHash.h              # Stateless seeded hashing for the groove model
 │       ├── DrumSampler.h/.cpp        # WAV loader + playback
 │       ├── DrumSynth.h/.cpp          # Built-in procedural drum voices
-│       └── EnergyAnalyzer.h/.cpp     # Guide-track energy → adaptive density
+│       └── EnergyAnalyzer.h/.cpp     # Guide-track energy -> Follow's accent/intensity modulation
+├── docs\                             # Architecture/roadmap history (see below)
 ├── tests\                            # JUCE UnitTest suite (run via CTest)
 └── third_party\
     └── JUCE\                         # git submodule
 ```
+
+`docs\` traces *why* the code looks the way it does, across two design passes:
+
+| File | What it covers |
+|---|---|
+| `FABLE_HANDOFF.md` / `FABLE_PROMPT.md` | Original context pack + design brief for the 2-D groove engine |
+| `ARCHITECTURE_2D_FOLLOW.md` | Chosen architecture: GrooveTable model, sidechain bus, params/state migration |
+| `FABLE_REVIEW.md` | Confirmed findings from that review, mapped to roadmap steps |
+| `ROADMAP_2D.md` | The 19-step implementation plan (steps 1–13 shipped; step 14's Follow-mapping plan is superseded — see below) |
+| `ARCHITECTURE_FOLLOW_V2.md` | Replaces `ARCHITECTURE_2D_FOLLOW.md` §3.4 / `ROADMAP_2D.md` step 14: the shipped Follow design (grid-preserving accent + intensity modulation, steps 20–21) |
+| `ROADMAP.md`, `TODO.md` | Earlier-phase planning notes |
 
 ---
 
