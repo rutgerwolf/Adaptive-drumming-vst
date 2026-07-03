@@ -58,9 +58,10 @@ struct GrooveTable
     static constexpr int kNumSteps  = 16;
 
     StepCell cells[kNumVoices][kNumSteps];
-    uint8_t  swing;      ///< 0..255 → 0..~66% delay of odd 16ths. Authored but not yet
-                         ///< consumed: the clock's boundary math is deliberately untouched
-                         ///< until the exact-double boundary rewrite lands (all styles 0).
+    uint8_t  swing;      ///< 0..255 → 0..~66% delay of odd 16ths, consumed by the step
+                         ///< clock (DrumStepClock.h::stepBoundarySample). All styles
+                         ///< currently author 0 (exact no-op); Jazz is the first
+                         ///< candidate for a nonzero value.
     uint32_t styleSalt;  ///< mixed into the trigger hash so styles decorrelate
 };
 
@@ -134,9 +135,8 @@ public:
 
     // ── Per-trigger queries (audio thread; pure arithmetic) ───────────────────
     /** True iff (voice, step) sounds in bar barIndex at the current complexity
-        and seed. Out-of-range voice/step returns false — this deliberately
-        keeps the old getStep() bounds behaviour for the clock's latent
-        step-16 remainder scan (finding #11, deferred). */
+        and seed. Out-of-range voice/step returns false (defensive; the step
+        clock's boundary walk only ever queries step in [0, kSteps)). */
     bool  stepFires    (int voice, int step, uint32_t barIndex) const noexcept;
 
     /** Velocity 0..1 for a firing (voice, step) in bar barIndex at the current
@@ -146,8 +146,18 @@ public:
     /** The style's immutable table (exposed for tests / future editors). */
     const GrooveTable& getActiveTable() const noexcept { return *activeTable; }
 
-    /** Pattern length in samples for the given tempo and sample rate (one bar). */
+    /** Pattern length in samples for the given tempo and sample rate (one bar),
+        truncated to an integer. Used where a whole-sample bar length is
+        needed (bar-wrap segmentation, ppq mapping). */
     int getLengthInSamples (double bpm, double sampleRate) const;
+
+    /** Exact (fractional) pattern length in samples — 4.0 * 60.0 / bpm *
+        sampleRate, one bar. The step clock (DrumStepClock.h) walks 16th-note
+        boundaries off this value directly (llround per boundary) rather than
+        off the truncated integer length, so the grid never compresses into
+        fewer than patternLenExact samples over a bar (see the clock's class
+        comment). 0.0 for invalid bpm/sampleRate. */
+    double getLengthInSamplesExact (double bpm, double sampleRate) const noexcept;
 
 private:
     const GrooveTable* activeTable;             // one of the const style tables
