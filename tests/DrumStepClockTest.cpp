@@ -7,19 +7,21 @@
 /**
  * Guard for the shared step clock (forEachStepTrigger in DrumStepClock.h).
  *
- * The boundary-detection math is deliberately the same per-sample scan against
- * integer-truncated lengths it has always been (the exact-double rewrite is
- * separate, deferred work); what changed with the GrooveTable is *what happens
- * at a boundary*: the pattern is queried per voice for fire + velocity and the
- * callback carries velocity01. These tests therefore pin, free-running over
- * full bars across a sweep of block sizes:
+ * Boundaries are walked off the exact (fractional) bar length rather than
+ * scanned per sample against an integer-truncated one, so the 16-step grid
+ * always spans the true bar length exactly (no phantom 17th boundary, no
+ * compression of the bar's tail out of the grid). These tests pin,
+ * free-running over full bars across a sweep of block sizes:
  *   - every (step, voice) the pattern says fires does so exactly once per bar;
  *   - nothing the pattern doesn't fire is triggered — in particular no
  *     callback maps to step index >= kSteps (no phantom 17th step);
  *   - the velocity passed to the callback is the pattern's stepVelocity;
  *   - the full trigger sequence (positions, voices, velocities — including
  *     hash-gated ornament cells and their per-bar variation) is identical
- *     however the timeline is sliced into blocks.
+ *     however the timeline is sliced into blocks;
+ *   - boundary sample positions match llround(k * patternLenExact / 16)
+ *     exactly, and swing delays odd steps by the expected sample count while
+ *     leaving even steps untouched.
  */
 class DrumStepClockTest : public juce::UnitTest
 {
@@ -46,6 +48,8 @@ public:
                     checkBar (c, t[0], t[1], bs);
 
         checkBlockSplitInvariance();
+        checkExactBoundaryPositions();
+        checkSwingOffsetsOddStepsOnly();
     }
 
 private:
@@ -177,6 +181,82 @@ private:
                     "block size " + juce::String (blockSize)
                     + " must reproduce the sample-by-sample trigger sequence exactly");
         }
+    }
+
+    void checkExactBoundaryPositions()
+    {
+        beginTest ("boundary positions match llround(k * patternLenExact / 16) exactly");
+
+        // 130 BPM @ 44.1 kHz: patternLenExact = 4 * 60 / 130 * 44100 = 81415.384615...
+        const double bpm = 130.0, sr = 44100.0;
+        DrumPattern p;   // Rock/Medium; swing 0 (all authored styles today)
+        const double patternLenExact = p.getLengthInSamplesExact (bpm, sr);
+        const double stepLenExact    = patternLenExact / DrumPattern::kSteps;
+
+        for (int k = 0; k < DrumPattern::kSteps; ++k)
+        {
+            const long long expected = (long long) std::llround (k * patternLenExact / 16.0);
+            const long long actual   = stepBoundarySample (k, stepLenExact, 0.0);
+            expectEquals ((juce::int64) actual, (juce::int64) expected,
+                          "step " + juce::String (k) + " boundary");
+        }
+
+        // A block edge that splits a boundary must still fire it exactly once,
+        // not zero or twice. Scan the two samples straddling step 8's boundary
+        // as one call vs. two split calls; both must yield the same triggers.
+        p.loadStyle (DrumPattern::Style::Rock);
+        p.setDensity (DrumPattern::Density::Full);   // dense enough to guarantee hits
+        const long long b8 = stepBoundarySample (8, stepLenExact, 0.0);
+        const int       scanStart = (int) b8 - 1;
+
+        int wholeCount = 0, splitCount = 0;
+        forEachStepTrigger (p, scanStart, 2, bpm, sr, 0,
+                            [&] (int, int, float) { ++wholeCount; });
+        forEachStepTrigger (p, scanStart,     1, bpm, sr, 0, [&] (int, int, float) { ++splitCount; });
+        forEachStepTrigger (p, scanStart + 1, 1, bpm, sr, 0, [&] (int, int, float) { ++splitCount; });
+
+        expectGreaterThan (wholeCount, 0, "step 8 must fire at least one voice at Rock/Full");
+        expectEquals (splitCount, wholeCount, "splitting the scan across the boundary must not lose or duplicate triggers");
+    }
+
+    void checkSwingOffsetsOddStepsOnly()
+    {
+        beginTest ("swing delays odd step boundaries only, by up to 2/3 of a step");
+
+        const double stepLenExact = 5088.4615384615;   // matches 130 BPM/44.1 kHz / 16
+
+        for (double swing01 : { 0.0, 0.25, 0.5, 1.0 })
+        {
+            for (int k = 0; k < 4 * DrumPattern::kSteps; ++k)   // sweep across bar wraps too
+            {
+                const long long straight = (long long) std::llround (k * stepLenExact);
+                const long long swung    = stepBoundarySample (k, stepLenExact, swing01);
+
+                if ((k % 2) == 0)
+                {
+                    expectEquals ((juce::int64) swung, (juce::int64) straight,
+                                  "even step " + juce::String (k) + " must never move");
+                }
+                else
+                {
+                    // Compare against one combined rounding (matching production's
+                    // single llround of position+offset) rather than subtracting
+                    // two independently-rounded values, which can differ by ±1.
+                    const long long expected = (long long) std::llround (
+                        k * stepLenExact + swing01 * stepLenExact * (2.0 / 3.0));
+                    expectEquals ((juce::int64) swung, (juce::int64) expected,
+                                  "odd step " + juce::String (k) + " swing offset");
+                    expect (swung - straight <= (long long) std::llround (stepLenExact),
+                            "swing offset must never reach a full step");
+                }
+            }
+        }
+
+        // Monotonicity: boundaries never go backwards even at max swing, across
+        // a bar wrap (step 15 swung vs step 16 = next bar's step 0, unswung).
+        for (int k = 0; k < 4 * DrumPattern::kSteps - 1; ++k)
+            expect (stepBoundarySample (k, stepLenExact, 1.0) <= stepBoundarySample (k + 1, stepLenExact, 1.0),
+                    "boundaries must be monotonically non-decreasing at max swing (step " + juce::String (k) + ")");
     }
 };
 

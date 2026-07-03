@@ -277,3 +277,9 @@ int DrumPattern::getLengthInSamples (double bpm, double sampleRate) const
     if (bpm <= 0.0 || sampleRate <= 0.0) return 0;
     return static_cast<int> ((4.0 * 60.0 / bpm) * sampleRate);
 }
+
+double DrumPattern::getLengthInSamplesExact (double bpm, double sampleRate) const noexcept
+{
+    if (bpm <= 0.0 || sampleRate <= 0.0) return 0.0;
+    return (4.0 * 60.0 / bpm) * sampleRate;
+}
