@@ -43,29 +43,31 @@ This roadmap turns the architecture in `docs/ARCHITECTURE_2D_FOLLOW.md` (Candida
 
 ## Step overview (dependency order)
 
-| # | Step | Fixes (confirmed findings) | Size |
-|---|---|---|---|
-| 1 | Guard tests: clock free-run + C1 concurrency stress | test-debt: "clock has zero direct tests", "no C1 concurrency test" | M |
-| 2 | Processor-level test scaffolding | test-debt: "no processor-level test below pluginval" | M |
-| 3 | Clock rewrite: exact-double boundaries + swing hook | phantom 17th step (low); prerequisite for B4 | M |
-| 4 | Host sync: tolerance ppq re-lock, hasPpq split, time sig | **B4×B3 double/dropped triggers (high)**, playing-without-ppq (med), 4/4 hardcode (low) | M |
-| 5 | Engine polyphony + velocity plumbing (vel = 1.0) | **B2 same-block trigger loss / retrigger click (high)** | M |
-| 6 | Synth headroom: gain rebalance + soft clip | synth sum > full scale (med) | S |
-| 7 | Sampler lock scope shrink + comment fix | try-lock drops a block's triggers (low) | S |
-| 8 | Stop/toggle hygiene: tails, `getTailLengthSeconds`, engine-switch reset | stop hard-reset click (low), toggle stale tails (low) | S |
-| 9 | DrumPatternTest → structural invariants | prerequisite for D1 (called out in A2 finding) | S |
-| 10 | Edge-detect parameter pushes in `processBlock` | **A2 per-block `setStyle` rebuild (med)** | S |
-| 11 | GrooveTable data model + seeded-hash firing + bar-latched style | **D1 no velocity data (high)**, mid-bar structural change (low) | L |
-| 12 | Params & state migration: intensity/complexity, stateVersion=2, density macro, grooveSeed | no state-version marker (low) | M |
-| 13 | Sidechain bus + gated guide selection | **no sidechain bus (high)**, analyse-disabled-input (low) | M |
-| 14 | ~~Follow 2-D mapping: energy→intensity, onset-rate→complexity~~ **superseded, see below** | follow quantized through 3-step density (low) | M |
-| 15 | Sampler failure-path integrity | loadSamples corrupts kit state (med) | S |
-| 16 | Sampler resampling at load | pitched/off-tempo kits (med) | S |
-| 17 | Async kit loading | blocking I/O in prepare/setState (low) | M |
-| 18 | Jazz re-author: swing + velocities | Jazz genre-wrong (low) | S |
-| 19 | `TableExchange` mailbox (dormant) + optional MIDI-out leaf | — (future-proofing) | M |
-| 20 | Grid-preserving Follow core: accent + macro signals, velocity modulation | replaces Step 14 (`ARCHITECTURE_FOLLOW_V2.md`) | M/L |
-| 21 | `followAmount` parameter + XY-pad follow overlay | replaces Step 14 (`ARCHITECTURE_FOLLOW_V2.md`) | S/M |
+| # | Step | Fixes (confirmed findings) | Size | Status |
+|---|---|---|---|---|
+| 1 | Guard tests: clock free-run + C1 concurrency stress | test-debt: "clock has zero direct tests", "no C1 concurrency test" | M | ✅ shipped |
+| 2 | Processor-level test scaffolding | test-debt: "no processor-level test below pluginval" | M | ✅ shipped |
+| 3 | Clock rewrite: exact-double boundaries + swing hook | phantom 17th step (low); prerequisite for B4 | M | ⬜ open (explicitly deferred; see the comment in `DrumStepClock.h`) |
+| 4 | Host sync: tolerance ppq re-lock, hasPpq split, time sig | **B4×B3 double/dropped triggers (high)**, playing-without-ppq (med), 4/4 hardcode (low) | M | ✅ shipped |
+| 5 | Engine polyphony + velocity plumbing (vel = 1.0) | **B2 same-block trigger loss / retrigger click (high)** | M | ✅ shipped |
+| 6 | Synth headroom: gain rebalance + soft clip | synth sum > full scale (med) | S | ⬜ open |
+| 7 | Sampler lock scope shrink + comment fix | try-lock drops a block's triggers (low) | S | ⬜ open (the try-lock in `DrumSampler::processBlock` still wraps `forEachStepTrigger`, not just `mixVoices`) |
+| 8 | Stop/toggle hygiene: tails, `getTailLengthSeconds`, engine-switch reset | stop hard-reset click (low), toggle stale tails (low) | S | ⬜ open (`getTailLengthSeconds()` still hardcoded to `0.0`) |
+| 9 | DrumPatternTest → structural invariants | prerequisite for D1 (called out in A2 finding) | S | ✅ shipped |
+| 10 | Edge-detect parameter pushes in `processBlock` | **A2 per-block `setStyle` rebuild (med)** | S | 🟡 moot — Step 11's atomic-index + bar-latch design made this cheap by construction; no separate edge-detect was needed |
+| 11 | GrooveTable data model + seeded-hash firing + bar-latched style | **D1 no velocity data (high)**, mid-bar structural change (low) | L | ✅ shipped |
+| 12 | Params & state migration: intensity/complexity, stateVersion=2, density macro, grooveSeed | no state-version marker (low) | M | ✅ shipped |
+| 13 | Sidechain bus + gated guide selection | **no sidechain bus (high)**, analyse-disabled-input (low) | M | ✅ shipped |
+| 14 | ~~Follow 2-D mapping: energy→intensity, onset-rate→complexity~~ **superseded, see below** | follow quantized through 3-step density (low) | M | ❌ superseded by steps 20-21 (never built as written) |
+| 15 | Sampler failure-path integrity | loadSamples corrupts kit state (med) | S | ⬜ open (a bad root path still clears `anyVoiceLoaded` unconditionally) |
+| 16 | Sampler resampling at load | pitched/off-tempo kits (med) | S | ⬜ open (no `LagrangeInterpolator` usage) |
+| 17 | Async kit loading | blocking I/O in prepare/setState (low) | M | ⬜ open (no `ThreadPool`; `prepareToPlay`/`setStateInformation` still load synchronously) |
+| 18 | Jazz re-author: swing + velocities | Jazz genre-wrong (low) | S | ⬜ open (all three styles still author `swing = 0`) |
+| 19 | `TableExchange` mailbox (dormant) + optional MIDI-out leaf | — (future-proofing) | M | ⬜ open |
+| 20 | Grid-preserving Follow core: accent + macro signals, velocity modulation | replaces Step 14 (`ARCHITECTURE_FOLLOW_V2.md`) | M/L | ✅ shipped |
+| 21 | `followAmount` parameter + XY-pad follow overlay | replaces Step 14 (`ARCHITECTURE_FOLLOW_V2.md`) | S/M | ✅ shipped |
+
+Status verified directly against source, not just commit history, as of this table's last update (2026-07-03).
 
 ---
 
