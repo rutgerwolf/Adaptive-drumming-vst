@@ -274,6 +274,70 @@ public:
             kitRoot.deleteRecursively();
         }
 
+        beginTest ("lock scope shrink — captured triggers apply identically regardless of block slicing");
+        {
+            // Regression for the narrowed try-lock: forEachStepTrigger now runs
+            // outside the lock, capturing into a fixed array applied once the
+            // lock is taken. Under an always-available lock (no contention),
+            // this two-phase split must be a behavioural no-op — rendering the
+            // same range as one call vs. many small-block calls must produce
+            // bit-identical audio, proving no captured trigger is lost or
+            // duplicated by the split itself.
+            const double sr  = 48000.0;
+            const double bpm = 140.0;
+
+            auto kitRoot = makeTempKitWithKick (400, sr, 0.5f);
+
+            DrumPattern pattern;
+            pattern.loadStyle  (DrumPattern::Style::Rock);
+            pattern.setDensity (DrumPattern::Density::Full);   // dense: many triggers per bar
+            const int patternLen = pattern.getLengthInSamples (bpm, sr);
+
+            auto renderWithBlockSize = [&] (int blockSize)
+            {
+                DrumSampler sampler;
+                sampler.prepare (sr);
+                sampler.loadSamples (kitRoot);
+
+                juce::AudioBuffer<float> captured (1, patternLen);
+                captured.clear();
+                juce::AudioBuffer<float> block (1, juce::jmax (blockSize, patternLen));
+                int written = 0;
+                while (written < patternLen)
+                {
+                    const int n = juce::jmin (blockSize, patternLen - written);
+                    block.setSize (1, n, false, false, true);
+                    block.clear();
+                    sampler.processBlock (block, n, sr, pattern, bpm, written, 0);
+                    captured.copyFrom (0, written, block, 0, 0, n);
+                    written += n;
+                }
+                return captured;
+            };
+
+            // One call spanning (almost) the whole bar vs. many small blocks.
+            const auto wholeBar   = renderWithBlockSize (patternLen);
+            const auto smallBlock = renderWithBlockSize (167);   // deliberately awkward size
+
+            bool identical = true;
+            int  firstDiff = -1;
+            for (int i = 0; i < patternLen && identical; ++i)
+            {
+                if (! juce::exactlyEqual (wholeBar.getSample (0, i), smallBlock.getSample (0, i)))
+                {
+                    identical = false;
+                    firstDiff = i;
+                }
+            }
+
+            if (! identical)
+                logMessage ("first mismatch at sample " + juce::String (firstDiff));
+
+            expect (identical, "capturing triggers outside the lock must not depend on block slicing");
+
+            kitRoot.deleteRecursively();
+        }
+
         beginTest ("manifest — flat, real-Salamander-style filenames resolve without subfolders");
         {
             const double sr        = 48000.0;
