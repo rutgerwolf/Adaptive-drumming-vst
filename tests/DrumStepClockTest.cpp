@@ -50,6 +50,7 @@ public:
         checkBlockSplitInvariance();
         checkExactBoundaryPositions();
         checkSwingOffsetsOddStepsOnly();
+        checkJazzSwingAppliesThroughRealTable();
     }
 
 private:
@@ -257,6 +258,58 @@ private:
         for (int k = 0; k < 4 * DrumPattern::kSteps - 1; ++k)
             expect (stepBoundarySample (k, stepLenExact, 1.0) <= stepBoundarySample (k + 1, stepLenExact, 1.0),
                     "boundaries must be monotonically non-decreasing at max swing (step " + juce::String (k) + ")");
+    }
+
+    void checkJazzSwingAppliesThroughRealTable()
+    {
+        beginTest ("Jazz's authored swing delays its odd-step ride hits (real table, not synthetic swing)");
+
+        // Everything above proves the swing math in isolation (stepBoundarySample
+        // called directly); this drives it through forEachStepTrigger with the
+        // actual Jazz GrooveTable, end to end.
+        const double bpm = 130.0, sr = 44100.0;
+
+        DrumPattern p;
+        p.loadStyle  (DrumPattern::Style::Jazz);
+        p.setDensity (DrumPattern::Density::Full);   // every ride step is deterministic (probability 255) here
+
+        const double patternLenExact = p.getLengthInSamplesExact (bpm, sr);
+        const double stepLenExact    = patternLenExact / DrumPattern::kSteps;
+        const double swing01         = (double) p.getActiveTable().swing / 255.0;
+        expectGreaterThan (swing01, 0.0, "Jazz must actually swing for this test to be meaningful");
+
+        const int patternLen = p.getLengthInSamples (bpm, sr);
+        long long rideOffset[DrumPattern::kSteps];
+        for (auto& o : rideOffset) o = -1;
+
+        forEachStepTrigger (p, 0, patternLen, bpm, sr, 0,
+            [&] (int voice, int offset, float)
+            {
+                if (voice != 4) return;   // Ride
+                const int step = (int) (std::llround (offset / stepLenExact) % DrumPattern::kSteps);
+                rideOffset[step] = offset;
+            });
+
+        for (int s = 0; s < DrumPattern::kSteps; ++s)
+        {
+            expect (rideOffset[s] >= 0, "ride must fire at step " + juce::String (s) + " at Full complexity");
+
+            const long long straight = (long long) std::llround (s * stepLenExact);
+            if ((s % 2) == 0)
+            {
+                expectEquals ((juce::int64) rideOffset[s], (juce::int64) straight,
+                              "even step " + juce::String (s) + " must not be swung");
+            }
+            else
+            {
+                const long long expected = (long long) std::llround (
+                    s * stepLenExact + swing01 * stepLenExact * (2.0 / 3.0));
+                expectEquals ((juce::int64) rideOffset[s], (juce::int64) expected,
+                              "odd step " + juce::String (s) + " must land at the swung position");
+                expect (rideOffset[s] > straight,
+                        "odd step " + juce::String (s) + " must land later than its straight position");
+            }
+        }
     }
 };
 

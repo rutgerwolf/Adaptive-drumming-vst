@@ -91,27 +91,56 @@ namespace
     constexpr GrooveTable makeJazz() noexcept
     {
         GrooveTable t {};
-        t.swing     = 0;             // still straight — the swung re-author is a later step
+        // ~0.6 of the way to a full triplet lean — a solid swing feel without
+        // tipping into a shuffle. Consumed by the step clock (DrumStepClock.h);
+        // delays odd 16th-note steps, never even ones.
+        t.swing     = 153;
         t.styleSalt = 0x6A617A7Au;   // 'jazz'
 
-        // Kick — feathered; more syncopation with complexity.
-        t.cells[vKick][ 0] = hit (85, 115, kThrSparse, StepCell::kFlagAccent);
-        t.cells[vKick][ 8] = hit (78, 108, kThrMedium);
-        t.cells[vKick][11] = hit (72, 104, kThrFull);
+        // Kick — feathered: a soft quarter-note pulse on 1 & 3 that keeps time
+        // without asserting itself (real upright-bass-era jazz kick technique),
+        // not the accented downbeat hit Rock/Electronic author. More
+        // syncopation (a push into beat 3, a pickup into beat 4) appears as
+        // complexity rises.
+        t.cells[vKick][ 0] = hit   (35, 58, kThrSparse);
+        t.cells[vKick][ 8] = hit   (32, 54, kThrSparse);
+        t.cells[vKick][ 6] = ghost (18, 38, 210, 130, 10);
+        t.cells[vKick][11] = hit   (40, 62, kThrFull);
 
-        // Snare — 2 & 4.
-        t.cells[vSnare][ 4] = hit (85, 120, kThrSparse, StepCell::kFlagAccent);
-        t.cells[vSnare][12] = hit (85, 120, kThrSparse, StepCell::kFlagAccent);
+        // Snare — no deterministic backbeat (that's a rock/electronic
+        // convention); a jazz drummer comps sparsely and unpredictably rather
+        // than marking 2 & 4. All four cells are hash-gated and only enter
+        // from Medium complexity up, humanized with velRandRange so no two
+        // bars land identically.
+        t.cells[vSnare][ 3] = ghost (14, 34, 205, 150, 10);
+        t.cells[vSnare][ 7] = ghost (14, 34, 215, 140, 10);
+        t.cells[vSnare][10] = ghost (16, 38, 225, 130, 10);
+        t.cells[vSnare][13] = ghost (16, 38, 235, 110, 10);
 
-        // Ride — quarters → 8ths → 16ths.
-        for (int s = 0; s < GrooveTable::kNumSteps; ++s)
-        {
-            if      (s % 4 == 0) t.cells[vRide][s] = hit (62, 110, kThrSparse);
-            else if (s % 2 == 0) t.cells[vRide][s] = hit (48,  95, kThrMedium);
-            else                 t.cells[vRide][s] = hit (28,  70, kThrFull);
-        }
+        // Ride — the "spang-a-lang" skip pattern: backbone on the quarters
+        // (0/4/8/12) plus the "and" of 2 & 4 (6/14), deliberately skipping the
+        // "and" of 1 & 3 (2/10) — the asymmetry that gives the classic jazz
+        // ride its forward lean (the swing above then shapes *when* each of
+        // these lands). Medium fills in the skipped "and"s; Full adds the
+        // remaining 16th-note positions for a busier wash.
+        t.cells[vRide][ 0] = hit (70, 118, kThrSparse, StepCell::kFlagAccent);
+        t.cells[vRide][ 1] = hit (22,  58, kThrFull);
+        t.cells[vRide][ 2] = hit (38,  78, kThrMedium);
+        t.cells[vRide][ 3] = hit (22,  58, kThrFull);
+        t.cells[vRide][ 4] = hit (58, 105, kThrSparse);
+        t.cells[vRide][ 5] = hit (22,  58, kThrFull);
+        t.cells[vRide][ 6] = hit (50,  92, kThrSparse);
+        t.cells[vRide][ 7] = hit (22,  58, kThrFull);
+        t.cells[vRide][ 8] = hit (62, 110, kThrSparse);
+        t.cells[vRide][ 9] = hit (22,  58, kThrFull);
+        t.cells[vRide][10] = hit (38,  78, kThrMedium);
+        t.cells[vRide][11] = hit (22,  58, kThrFull);
+        t.cells[vRide][12] = hit (58, 105, kThrSparse);
+        t.cells[vRide][13] = hit (22,  58, kThrFull);
+        t.cells[vRide][14] = hit (50,  92, kThrSparse);
+        t.cells[vRide][15] = hit (22,  58, kThrFull);
 
-        // Tom — fill into beat 4.
+        // Tom — fill into beat 4, unchanged in spirit.
         t.cells[vTom][13] = hit (68, 108, kThrFull);
         t.cells[vTom][14] = hit (72, 112, kThrFull);
 

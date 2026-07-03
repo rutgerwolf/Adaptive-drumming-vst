@@ -59,9 +59,8 @@ struct GrooveTable
 
     StepCell cells[kNumVoices][kNumSteps];
     uint8_t  swing;      ///< 0..255 → 0..~66% delay of odd 16ths, consumed by the step
-                         ///< clock (DrumStepClock.h::stepBoundarySample). All styles
-                         ///< currently author 0 (exact no-op); Jazz is the first
-                         ///< candidate for a nonzero value.
+                         ///< clock (DrumStepClock.h::stepBoundarySample). Rock/Electronic
+                         ///< author 0 (straight); Jazz authors ~153 (~0.6 swing).
     uint32_t styleSalt;  ///< mixed into the trigger hash so styles decorrelate
 };
 
