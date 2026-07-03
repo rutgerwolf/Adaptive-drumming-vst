@@ -1,14 +1,14 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "XYPad.h"
 
 /**
  * AdaptiveDrummerEditor
  *
  * Dark UI inspired by GarageBand Drummer:
  *   - Style selector  (Rock / Jazz / Electronic)
- *   - Intensity / Complexity sliders (the 2-D groove axes; a visual XY pad is
- *     a later UI pass — these are plain sliders for now)
+ *   - Groove XY pad (Complexity x, Intensity y — the 2-D groove axes)
  *   - BPM display (host-synced or manual)
  *   - Volume knob
  *   - Sample-load status + browse button
@@ -36,11 +36,8 @@ private:
     juce::TextButton electronicButton { "Electronic" };
 
     // The 2-D groove axes. Disabled (and shown live) while Follow is on, same
-    // as the density buttons they replaced.
-    juce::Slider intensitySlider, complexitySlider;
-    juce::Label  intensityTitleLabel, complexityTitleLabel;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> complexityAttachment;
+    // as the density buttons/sliders it replaced.
+    XYPad groovePad;
 
     // Follow (adaptive density) + guide-energy meter
     juce::TextButton     followButton { "Follow" };
