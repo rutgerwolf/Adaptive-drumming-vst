@@ -11,7 +11,7 @@
 - [ ] Smoke-test the **VST3** in a DAW (Reaper / Live / Cubase): insert on a track, confirm the host transport plays the drums and the tempo follows the host.
 - [ ] Verify in **Adobe Audition's Effects Rack**: it appears in the effect list, loads, and plays.
 - [ ] Note whether the **custom editor renders** in Audition or falls back to generic sliders. If it falls back, investigate the known JUCE/Adobe VST3 editor quirk and document a workaround.
-- [ ] Confirm **Follow** mode reacts to real audio on the track (energy meter moves, density changes).
+- [ ] Confirm **Follow** mode reacts to real audio on the track (energy meter moves, accents land on transients, intensity shifts with the guide's level — see `docs/ARCHITECTURE_FOLLOW_V2.md`).
 - [ ] Sanity-check **state save/restore** in a real session (reopen → settings + sample folder remembered).
 
 ## Phase B — Build & distribute
@@ -23,8 +23,8 @@
 
 ## Phase C — Musicality (Phase 4)
 
-- [ ] **A2** — rebuild the pattern only when `style`/`density` changes (groundwork; avoids rebuilding every block).
-- [ ] **D1** — per-step velocity & accents.
+- [x] **A2** — rebuild the pattern only when `style`/`density` changes (shipped: `ROADMAP_2D.md` steps 10+11, atomic style index + bar-latched const tables).
+- [x] **D1** — per-step velocity & accents (shipped: `ROADMAP_2D.md` step 11's `StepCell` model; Follow's own accent modulation shipped in steps 20-21, see `ARCHITECTURE_FOLLOW_V2.md`).
 - [ ] **Fills / turnarounds** at the end of a bar or every N bars.
 - [ ] **Humanisation** — subtle timing/velocity jitter.
 - [ ] More styles and per-style variations.
