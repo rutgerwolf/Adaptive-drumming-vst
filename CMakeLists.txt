@@ -31,6 +31,7 @@ juce_add_plugin(AdaptiveDrummer
 target_sources(AdaptiveDrummer PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    src/XYPad.cpp
     src/drummer/DrumPattern.cpp
     src/drummer/DrumSampler.cpp
     src/drummer/DrumSynth.cpp
@@ -111,6 +112,7 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         src/drummer/AdaptiveDrummer.cpp
         src/PluginProcessor.cpp
         src/PluginEditor.cpp
+        src/XYPad.cpp
     )
 
     target_include_directories(AdaptiveDrummerTests PRIVATE src)

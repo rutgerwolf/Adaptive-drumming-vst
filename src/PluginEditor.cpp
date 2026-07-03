@@ -11,9 +11,11 @@ static const juce::Colour kAccent { 0xff6c9bd1 };
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
-    : AudioProcessorEditor (&p), proc (p)
+    : AudioProcessorEditor (&p), proc (p),
+      groovePad (*p.apvts.getParameter ("complexity"), *p.apvts.getParameter ("intensity"),
+                 "COMPLEXITY", "INTENSITY")
 {
-    setSize (420, 416);   // +32px vs. v1: two slider rows replace one button row
+    setSize (420, 562);   // +146px vs. v2: a single square XY pad replaces both slider rows
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -33,30 +35,8 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     electronicButton.onClick = [this] { proc.apvts.getParameter ("style")->setValueNotifyingHost (
                                             proc.apvts.getParameter ("style")->convertTo0to1 (2.0f)); };
 
-    // ── Intensity / Complexity (the 2-D groove axes) ─────────────────────────
-    for (auto* s : { &intensitySlider, &complexitySlider })
-    {
-        s->setSliderStyle (juce::Slider::LinearHorizontal);
-        s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, 20);
-        s->setColour (juce::Slider::trackColourId,      kAccent);
-        s->setColour (juce::Slider::backgroundColourId, kPanel);
-        s->setColour (juce::Slider::thumbColourId,      kAccent);
-        s->setColour (juce::Slider::textBoxTextColourId, kText);
-        addAndMakeVisible (s);
-    }
-    for (auto* l : { &intensityTitleLabel, &complexityTitleLabel })
-    {
-        l->setColour (juce::Label::textColourId, kMuted);
-        l->setFont (juce::Font (10.0f));
-        addAndMakeVisible (l);
-    }
-    intensityTitleLabel.setText  ("INTENSITY",  juce::dontSendNotification);
-    complexityTitleLabel.setText ("COMPLEXITY", juce::dontSendNotification);
-
-    intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        proc.apvts, "intensity", intensitySlider);
-    complexityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        proc.apvts, "complexity", complexitySlider);
+    // ── Groove XY pad (the 2-D groove axes) ──────────────────────────────────
+    addAndMakeVisible (groovePad);
 
     // ── Follow toggle (adaptive density from the guide track) ────────────────
     followButton.setClickingTogglesState (true);
@@ -169,9 +149,10 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.setFont (juce::Font (10.0f));
     g.setColour (kMuted);
     g.drawText ("STYLE",   12, 36,  60, 12, juce::Justification::left);
-    g.drawText ("FOLLOW",  12, 176, 60, 12, juce::Justification::left);
-    g.drawText ("ENERGY",  energyMeterBounds.getX(), 176, 80, 12, juce::Justification::left);
-    g.drawText ("SOUND",   12, 232, 60, 12, juce::Justification::left);
+    g.drawText ("GROOVE",  12, 94,  60, 12, juce::Justification::left);
+    g.drawText ("FOLLOW",  12, 322, 60, 12, juce::Justification::left);
+    g.drawText ("ENERGY",  energyMeterBounds.getX(), 322, 80, 12, juce::Justification::left);
+    g.drawText ("SOUND",   12, 378, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
@@ -206,32 +187,31 @@ void AdaptiveDrummerEditor::resized()
     jazzButton      .setBounds (m + btnW + m,        50, btnW, btnH);
     electronicButton.setBounds (m + 2 * (btnW + m),  50, btnW, btnH);
 
-    // Intensity / Complexity sliders  y=94-158 (replaces the old single-row
-    // density buttons with two rows, so everything below shifts down 32px)
-    intensityTitleLabel.setBounds  (m,             94,  90, 12);
-    intensitySlider.setBounds      (m,             106, W - 2 * m, 20);
-    complexityTitleLabel.setBounds (m,             130, 90, 12);
-    complexitySlider.setBounds     (m,             142, W - 2 * m, 20);
+    // Groove XY pad  y=108-308 (replaces both slider rows with one square pad,
+    // centred in the usable width; everything below shifts down 146px)
+    constexpr int padSize = 200;
+    const int padX = m + ((W - 2 * m) - padSize) / 2;   // centred in the usable width
+    groovePad.setBounds (padX, 108, padSize, padSize);
 
-    // Follow toggle + energy meter  y=190
-    followButton.setBounds (m, 190, btnW, btnH);
-    energyMeterBounds = juce::Rectangle<int> (m + btnW + m, 190, 2 * btnW + m, btnH);
+    // Follow toggle + energy meter  y=336
+    followButton.setBounds (m, 336, btnW, btnH);
+    energyMeterBounds = juce::Rectangle<int> (m + btnW + m, 336, 2 * btnW + m, btnH);
 
-    // Sound source buttons  y=246
-    sourceSynthButton  .setBounds (m,            246, btnW, btnH);
-    sourceSamplesButton.setBounds (m + btnW + m, 246, btnW, btnH);
+    // Sound source buttons  y=392
+    sourceSynthButton  .setBounds (m,            392, btnW, btnH);
+    sourceSamplesButton.setBounds (m + btnW + m, 392, btnW, btnH);
 
-    // BPM  y=298
-    bpmTitleLabel.setBounds (m,      298, 30, 14);
-    bpmValueLabel.setBounds (m + 30, 294, 80, 28);
+    // BPM  y=444
+    bpmTitleLabel.setBounds (m,      444, 30, 14);
+    bpmValueLabel.setBounds (m + 30, 440, 80, 28);
 
     // Volume  (right side)
-    volumeTitleLabel.setBounds (W - m - 60 - 14, 298, 30, 14);
-    volumeSlider    .setBounds (W - m - 60,       286, 60, 60);
+    volumeTitleLabel.setBounds (W - m - 60 - 14, 444, 30, 14);
+    volumeSlider    .setBounds (W - m - 60,       432, 60, 60);
 
     // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        376, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  378, W - 140, 20);
+    loadSamplesButton  .setBounds (m,        522, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  524, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -263,19 +243,14 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     jazzButton      .setToggleState (style == 1, juce::dontSendNotification);
     electronicButton.setToggleState (style == 2, juce::dontSendNotification);
 
-    // Intensity/Complexity sliders: when Follow is on the axes are chosen by
-    // the guide energy, so show the live adaptive value (a display-only move,
-    // via dontSendNotification, so it doesn't fight the SliderAttachment by
-    // writing back into the parameter) and disable manual dragging — same
-    // pattern the old density buttons used.
+    // Groove pad: when Follow is on the axes are chosen by the guide energy,
+    // so show the live adaptive position (a display-only move that doesn't
+    // touch the bound parameters) and disable manual dragging — same pattern
+    // the density buttons/sliders it replaced used.
     const bool following = *proc.apvts.getRawParameterValue ("follow") > 0.5f;
     if (following)
-    {
-        intensitySlider.setValue  (proc.getCurrentIntensity(),  juce::dontSendNotification);
-        complexitySlider.setValue (proc.getCurrentComplexity(), juce::dontSendNotification);
-    }
-    intensitySlider.setEnabled  (! following);
-    complexitySlider.setEnabled (! following);
+        groovePad.setDisplayPosition (proc.getCurrentComplexity(), proc.getCurrentIntensity());
+    groovePad.setEnabled (! following);
 
     // Sound source buttons
     const bool useSynth = static_cast<int> (*proc.apvts.getRawParameterValue ("source")) == 0;
