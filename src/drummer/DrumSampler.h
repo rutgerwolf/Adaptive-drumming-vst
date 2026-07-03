@@ -25,6 +25,11 @@
  * Thread-safety: loadSamples() builds a new sample set on the calling
  * (message) thread and swaps it in under a SpinLock that processBlock()
  * try-locks on the audio thread, so loading never races the audio callback.
+ * loadSamples() also resets voices[] (the playback cursors) under the same
+ * lock, so processBlock() only needs to hold it around the two things that
+ * touch that shared state — claiming a slot (triggerVoice) and reading
+ * sample data (mixVoices) — not around computing which voices fire, which
+ * reads only this call's own pattern/playhead arguments.
  *
  * Polyphony: each voice has a fixed pool of kSlotsPerVoice playback slots, so
  * up to that many overlapping hits of the same voice — two triggers inside one
@@ -96,8 +101,11 @@ private:
                                            const std::unordered_map<juce::String, juce::File>& flatIndex);
 
     SampleSet      sampleSet;   // guarded by sampleLock
-    juce::SpinLock sampleLock;  // brief: held only for the cheap swap
-    Voice          voices[kNumVoices][kSlotsPerVoice];
+    juce::SpinLock sampleLock;  // guards sampleSet and voices[] (see the class comment);
+                                // held briefly on both sides — the swap in loadSamples(),
+                                // and slot-claiming + mixing (not trigger computation) in
+                                // processBlock()
+    Voice          voices[kNumVoices][kSlotsPerVoice];   // guarded by sampleLock
 
     juce::AudioFormatManager formatManager;
     double                   currentSampleRate { 44100.0 };

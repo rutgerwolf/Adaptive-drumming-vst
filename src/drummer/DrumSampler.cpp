@@ -104,13 +104,34 @@ void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,
                                 int                       playheadSample,
                                 uint32_t                  barIndex)
 {
-    // If loadSamples() is mid-swap, skip this block rather than race the buffers.
+    // forEachStepTrigger reads only pattern + playhead (this call's own
+    // arguments), never sampleSet or voices[] — safe to run before the lock.
+    // Capturing into a small fixed array (16 steps * kNumVoices generously
+    // covers a block; a block spanning more bars than that is not a realistic
+    // host block size, so triggers beyond the capacity are simply dropped)
+    // keeps the locked section below to just the two things that actually
+    // touch state loadSamples() also writes under the lock.
+    struct Trig { int voice; int offset; float velocity01; };
+    Trig      trigs[128];
+    int       numTrigs = 0;
+    const int trigsCapacity = static_cast<int> (sizeof (trigs) / sizeof (trigs[0]));
+
+    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate, barIndex,
+                        [&] (int voice, int offset, float velocity01)
+                        {
+                            if (numTrigs < trigsCapacity)
+                                trigs[numTrigs++] = { voice, offset, velocity01 };
+                        });
+
+    // If loadSamples() is mid-swap, skip this block's triggers and mix rather
+    // than race sampleSet/voices[] — a far smaller window than scanning the
+    // whole block under the lock, since only slot-claiming and mixing (the
+    // two things loadSamples() also touches under this lock) are inside it.
     const juce::SpinLock::ScopedTryLockType sl (sampleLock);
     if (! sl.isLocked()) return;
 
-    forEachStepTrigger (pattern, playheadSample, numSamples, bpm, sampleRate, barIndex,
-                        [this] (int voice, int offset, float velocity01)
-                        { triggerVoice (voice, offset, velocity01); });
+    for (int i = 0; i < numTrigs; ++i)
+        triggerVoice (trigs[i].voice, trigs[i].offset, trigs[i].velocity01);
 
     mixVoices (outBuffer, numSamples);
 }
