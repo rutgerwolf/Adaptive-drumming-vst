@@ -111,16 +111,24 @@ public:
         {
             // The exact layers[density][step] bitmasks the model stored before
             // the GrooveTable landed. The deterministic backbone (probability
-            // 255 cells) at each mapLegacy density point must reproduce them.
+            // 255 cells) at each mapLegacy density point must reproduce them —
+            // Rock and Electronic are the original pre-GrooveTable masks; Jazz
+            // was re-authored at Step 18 (swing + comping + a skip-note ride)
+            // and no longer carries a deterministic snare backbeat by design
+            // (see the "snare comping" test below), so its golden values below
+            // are the new table's own backbone, not the old bitmasks.
             static const uint8_t goldenMasks[3][3][DrumPattern::kSteps] = {
                 { // Rock
                   { 0x05,0,0,0, 0x06,0,0,0, 0x05,0,0,0, 0x06,0,0,0 },
                   { 0x05,0,0x04,0, 0x06,0,0x04,0, 0x05,0,0x04,0, 0x06,0,0x04,0 },
                   { 0x0D,0x04,0x05,0x04, 0x06,0x04,0x04,0x04, 0x05,0x04,0x05,0x04, 0x06,0x24,0x24,0x04 } },
-                { // Jazz
-                  { 0x11,0,0,0, 0x12,0,0,0, 0x10,0,0,0, 0x12,0,0,0 },
-                  { 0x11,0,0x10,0, 0x12,0,0x10,0, 0x11,0,0x10,0, 0x12,0,0x10,0 },
-                  { 0x11,0x10,0x10,0x10, 0x12,0x10,0x10,0x10, 0x11,0x10,0x10,0x11, 0x12,0x30,0x30,0x10 } },
+                { // Jazz (re-authored, Step 18): kick 0/8, ride skip-pattern
+                  // 0/4/6/8/12/14 at Sparse; ride fills the skipped "and"s
+                  // (2/10) at Medium; ride fills the remaining 16ths and kick
+                  // adds step 11 at Full (Tom joins at 13/14, hence 0x30).
+                  { 0x11,0,0,0, 0x10,0,0x10,0, 0x11,0,0,0, 0x10,0,0x10,0 },
+                  { 0x11,0,0x10,0, 0x10,0,0x10,0, 0x11,0,0x10,0, 0x10,0,0x10,0 },
+                  { 0x11,0x10,0x10,0x10, 0x10,0x10,0x10,0x10, 0x11,0x10,0x10,0x11, 0x10,0x30,0x30,0x10 } },
                 { // Electronic
                   { 0x01,0,0,0, 0x03,0,0,0, 0x01,0,0,0, 0x03,0,0,0 },
                   { 0x05,0,0x04,0, 0x07,0,0x04,0, 0x05,0,0x04,0, 0x07,0,0x04,0 },
@@ -164,6 +172,37 @@ public:
                     if (rock.stepFires (v, s, 0) != jazz.stepFires (v, s, 0))
                         differ = true;
             expect (differ, "Rock and Jazz medium grooves must not be identical");
+        }
+
+        beginTest ("Jazz (Step 18) — swings, has no deterministic snare backbeat, but comps somewhere");
+        {
+            DrumPattern rock, electronic, jazz;
+            rock.loadStyle       (DrumPattern::Style::Rock);
+            electronic.loadStyle (DrumPattern::Style::Electronic);
+            jazz.loadStyle       (DrumPattern::Style::Jazz);
+
+            expectEquals ((int) rock.getActiveTable().swing,       0, "Rock stays straight");
+            expectEquals ((int) electronic.getActiveTable().swing, 0, "Electronic stays straight");
+            expectGreaterThan ((int) jazz.getActiveTable().swing,  0, "Jazz must swing");
+
+            // No deterministic (probability-255) snare cell anywhere in the Jazz
+            // table — unlike Rock/Electronic's marked 2-&-4 backbeat, Jazz comps.
+            for (int s = 0; s < DrumPattern::kSteps; ++s)
+                expect (jazz.getActiveTable().cells[1][s].probability != 255
+                        || jazz.getActiveTable().cells[1][s].velHigh == 0,
+                        "Jazz snare must not be an authored deterministic backbone hit (step "
+                        + juce::String (s) + ")");
+
+            // But comping is real, not silent: at Full complexity, across enough
+            // bars, the snare fires *somewhere* for the default seed.
+            jazz.setComplexity (1.0f);
+            jazz.setIntensity  (0.7f);
+            bool snareEverFired = false;
+            for (uint32_t bar = 0; bar < 8 && ! snareEverFired; ++bar)
+                for (int s = 0; s < DrumPattern::kSteps && ! snareEverFired; ++s)
+                    if (jazz.stepFires (1, s, bar))
+                        snareEverFired = true;
+            expect (snareEverFired, "Jazz snare comping must fire at least once over 8 bars at Full complexity");
         }
 
         beginTest ("structural invariants — hit count monotonically non-decreasing in complexity");
