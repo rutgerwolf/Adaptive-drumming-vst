@@ -68,7 +68,7 @@ public:
         drummer simply free-runs. */
     void setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition) noexcept;
 
-    bool loadSamples    (const juce::File& salamanderRoot);
+    bool loadSamples    (const juce::File& salamanderRoot, const juce::File& manifestFile = {});
     bool areSamplesLoaded() const noexcept { return drumSampler.areSamplesLoaded(); }
 
     /** Add drum audio into outBuffer (caller must clear buffer first). */

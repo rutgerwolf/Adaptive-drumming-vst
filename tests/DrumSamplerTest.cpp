@@ -273,25 +273,149 @@ public:
 
             kitRoot.deleteRecursively();
         }
+
+        beginTest ("manifest — flat, real-Salamander-style filenames resolve without subfolders");
+        {
+            const double sr        = 48000.0;
+            const double bpm       = 60.0;
+            const int    sampleLen = 2000;
+
+            // A flat kit — no per-voice subfolders, exactly like an unmodified
+            // Salamander download. hihat/crash/ride/tom are deliberately absent
+            // (and have no subfolder to fall back to either): proves partial
+            // resolution — some voices via the manifest, others silent — rather
+            // than an all-or-nothing load.
+            auto kitRoot = juce::File::createTempFile ("adk_flat_kit");
+            kitRoot.deleteFile();
+            kitRoot.createDirectory();
+            writeTestWav (kitRoot.getChildFile ("kick_OH_F_1.wav"),  sampleLen, sr);
+            writeTestWav (kitRoot.getChildFile ("snare_OH_F_1.wav"), sampleLen, sr);
+
+            auto manifestFile = kitRoot.getChildFile ("manifest.json");
+            manifestFile.replaceWithText (R"JSON({
+                "kick":  ["kick_OH_F_1.wav"],
+                "snare": ["snare_OH_F_1.wav"]
+            })JSON");
+
+            DrumSampler sampler;
+            sampler.prepare (sr);
+            expect (sampler.loadSamples (kitRoot, manifestFile), "flat kit should resolve via manifest");
+            expect (sampler.areSamplesLoaded());
+
+            // Electronic / Sparse fires the kick alone on step 0 (see the B1 test
+            // above); capture well short of the next kick at step 4 (stepLen is
+            // 12000 samples at this bpm/sr) so only the step-0 hit is in view.
+            DrumPattern pattern;
+            pattern.loadStyle  (DrumPattern::Style::Electronic);
+            pattern.setDensity (DrumPattern::Density::Sparse);
+
+            const int blockSize = 512;
+            const int numBlocks = 8;   // 4096 samples: covers the 2000-sample hit with margin
+
+            juce::AudioBuffer<float> block (1, blockSize);
+            float peakMagnitude = 0.0f;
+            bool  allFinite     = true;
+            int   playhead      = 0;
+            for (int b = 0; b < numBlocks; ++b)
+            {
+                block.clear();
+                sampler.processBlock (block, blockSize, sr, pattern, bpm, playhead, 0);
+                peakMagnitude = juce::jmax (peakMagnitude, block.getMagnitude (0, blockSize));
+                if (! std::isfinite (block.getMagnitude (0, blockSize)))
+                    allFinite = false;
+                playhead += blockSize;
+            }
+
+            expect (allFinite, "output must stay finite even with hihat/crash/ride/tom unresolved");
+            expectGreaterThan (peakMagnitude, 0.0f, "kick resolved via the manifest must be audible");
+
+            kitRoot.deleteRecursively();
+        }
+
+        beginTest ("manifest — falls back per-voice to the legacy subfolder path, not all-or-nothing");
+        {
+            const double sr        = 48000.0;
+            const double bpm       = 120.0;
+            const int    sampleLen = 2000;
+
+            // kick resolves via the manifest (flat, root-level file); snare has
+            // no manifest entry at all, so it must fall back to the legacy
+            // <root>/snare/ subfolder scan, unchanged from before manifests
+            // existed.
+            auto kitRoot = juce::File::createTempFile ("adk_mixed_kit");
+            kitRoot.deleteFile();
+            kitRoot.createDirectory();
+            writeTestWav (kitRoot.getChildFile ("kick_OH_F_1.wav"), sampleLen, sr);
+
+            auto snareDir = kitRoot.getChildFile ("snare");
+            snareDir.createDirectory();
+            writeTestWav (snareDir.getChildFile ("snare.wav"), sampleLen, sr);
+
+            auto manifestFile = kitRoot.getChildFile ("manifest.json");
+            manifestFile.replaceWithText (R"JSON({ "kick": ["kick_OH_F_1.wav"] })JSON");
+
+            DrumSampler mixedSampler;
+            mixedSampler.prepare (sr);
+            expect (mixedSampler.loadSamples (kitRoot, manifestFile), "mixed kit should load");
+            expect (mixedSampler.areSamplesLoaded());
+
+            // A kick-only kit (no snare anywhere) loaded with the same manifest,
+            // for the differential comparison below.
+            auto kickOnlyRoot = juce::File::createTempFile ("adk_kickonly_kit");
+            kickOnlyRoot.deleteFile();
+            kickOnlyRoot.createDirectory();
+            writeTestWav (kickOnlyRoot.getChildFile ("kick_OH_F_1.wav"), sampleLen, sr);
+
+            DrumSampler kickOnlySampler;
+            kickOnlySampler.prepare (sr);
+            expect (kickOnlySampler.loadSamples (kickOnlyRoot, manifestFile), "kick-only kit should load");
+
+            // Rock / Medium hits both kick and snare repeatedly over a full bar;
+            // summed peak magnitude over one full pattern is strictly greater
+            // once snare (all-positive DC content, additively mixed) is also
+            // sounding — regardless of exactly which steps snare lands on.
+            DrumPattern pattern;   // default Rock / Medium
+            const int patternLen = pattern.getLengthInSamples (bpm, sr);
+            const int blockSize  = 512;
+            const int numBlocks  = (patternLen + blockSize - 1) / blockSize;
+
+            auto renderFullPattern = [&] (DrumSampler& s) -> float
+            {
+                juce::AudioBuffer<float> block (1, blockSize);
+                float total    = 0.0f;
+                int   playhead = 0;
+                for (int b = 0; b < numBlocks; ++b)
+                {
+                    block.clear();
+                    s.processBlock (block, blockSize, sr, pattern, bpm, playhead, 0);
+                    total += block.getMagnitude (0, blockSize);
+                    playhead = (playhead + blockSize) % patternLen;
+                }
+                return total;
+            };
+
+            const float mixedTotal    = renderFullPattern (mixedSampler);
+            const float kickOnlyTotal = renderFullPattern (kickOnlySampler);
+
+            logMessage ("fallback test: kick-only total = " + juce::String (kickOnlyTotal, 4)
+                        + ", mixed (kick+fallback-snare) total = " + juce::String (mixedTotal, 4));
+            expectGreaterThan (mixedTotal, kickOnlyTotal,
+                               "snare loaded via the legacy subfolder fallback must add audible "
+                               "content beyond the manifest-resolved kick alone");
+
+            kitRoot.deleteRecursively();
+            kickOnlyRoot.deleteRecursively();
+        }
     }
 
 private:
-    // Creates <temp>/adk_test_kit_XXXX/kick/kick.wav containing `numSamples`
-    // of DC = `dcLevel` (mono). Returns the kit root directory.
-    juce::File makeTempKitWithKick (int numSamples, double sr, float dcLevel = 1.0f)
+    // Writes a mono WAV of `numSamples` at DC = `dcLevel` to `file`.
+    void writeTestWav (const juce::File& file, int numSamples, double sr, float dcLevel = 1.0f)
     {
-        auto root = juce::File::createTempFile ("adk_test_kit");
-        root.deleteFile();
-        root.createDirectory();
-
-        auto kickDir = root.getChildFile ("kick");
-        kickDir.createDirectory();
-
-        auto wav = kickDir.getChildFile ("kick.wav");
-        wav.deleteFile();
+        file.deleteFile();
 
         juce::WavAudioFormat fmt;
-        if (auto* os = wav.createOutputStream().release())
+        if (auto* os = file.createOutputStream().release())
         {
             std::unique_ptr<juce::AudioFormatWriter> writer (
                 fmt.createWriterFor (os, sr, 1, 16, {}, 0));
@@ -308,6 +432,20 @@ private:
                 delete os;   // writer takes ownership only on success
             }
         }
+    }
+
+    // Creates <temp>/adk_test_kit_XXXX/kick/kick.wav containing `numSamples`
+    // of DC = `dcLevel` (mono). Returns the kit root directory.
+    juce::File makeTempKitWithKick (int numSamples, double sr, float dcLevel = 1.0f)
+    {
+        auto root = juce::File::createTempFile ("adk_test_kit");
+        root.deleteFile();
+        root.createDirectory();
+
+        auto kickDir = root.getChildFile ("kick");
+        kickDir.createDirectory();
+
+        writeTestWav (kickDir.getChildFile ("kick.wav"), numSamples, sr, dcLevel);
 
         return root;
     }

@@ -295,9 +295,10 @@ void AdaptiveDrummerEditor::openSampleFolder()
                     juce::MessageBoxIconType::WarningIcon,
                     "Samples not found",
                     "No drum samples found in the selected folder.\n\n"
-                    "Expected subfolders: kick/  snare/  hihat/  crash/  ride/  tom/\n"
-                    "Each folder needs at least one WAV file.\n\n"
-                    "Compatible pack: Salamander Drumkit\n"
-                    "(archive.org/details/SalamanderDrumkit)");
+                    "Easiest: point this at an unmodified, extracted Salamander "
+                    "Drumkit download (archive.org/details/SalamanderDrumkit) — "
+                    "it's recognised automatically, no sorting needed.\n\n"
+                    "For other packs: use subfolders kick/  snare/  hihat/  "
+                    "crash/  ride/  tom/, each with at least one WAV file.");
         });
 }

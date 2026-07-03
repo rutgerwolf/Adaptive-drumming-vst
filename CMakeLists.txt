@@ -85,6 +85,16 @@ add_custom_command(TARGET AdaptiveDrummer_Standalone POST_BUILD
     COMMENT "Copying assets to Standalone output"
 )
 
+# ...and next to the VST3 binary (inside Contents/<arch>/) — the plugin's
+# primary format, so a copy loaded by a real DAW also finds the shipped
+# Salamander manifest via the same executable-relative lookup.
+add_custom_command(TARGET AdaptiveDrummer_VST3 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/assets"
+        "$<TARGET_FILE_DIR:AdaptiveDrummer_VST3>/assets"
+    COMMENT "Copying assets to VST3 output"
+)
+
 # ── Unit tests ─────────────────────────────────────────────────────────────────
 option(ADAPTIVE_DRUMMER_BUILD_TESTS "Build the AdaptiveDrummer unit-test suite" ON)
 

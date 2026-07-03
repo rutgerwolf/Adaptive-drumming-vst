@@ -3,13 +3,21 @@
 #include "DrumPattern.h"
 
 #include <atomic>
+#include <unordered_map>
 
 /**
  * DrumSampler — loads WAV samples and renders drum hits into an audio buffer.
  *
- * Expected directory layout (one WAV per subfolder is enough):
- *   <root>/kick/   <root>/snare/  <root>/hihat/
- *   <root>/crash/  <root>/ride/   <root>/tom/
+ * Two ways to point loadSamples() at a kit:
+ *   - A manifest (see assets/salamander_manifest.json) maps each voice to a
+ *     list of candidate filenames, matched against one recursive scan of the
+ *     root folder — so an unmodified, flat kit download (e.g. Salamander's own
+ *     `kick_OH_F_1.wav`-style layout) loads with no manual sorting.
+ *   - Per-voice subfolders, one WAV per subfolder is enough:
+ *       <root>/kick/   <root>/snare/  <root>/hihat/
+ *       <root>/crash/  <root>/ride/   <root>/tom/
+ *     Used whenever the manifest is absent, or doesn't resolve a given voice
+ *     (per-voice fallback, not all-or-nothing).
  *
  * Compatible with the Salamander Drumkit and similar sample packs.
  * Missing voices produce silence; playback continues for loaded voices.
@@ -32,7 +40,11 @@ public:
     ~DrumSampler() = default;
 
     void prepare (double sampleRate);
-    bool loadSamples (const juce::File& salamanderRoot);
+
+    /** manifestFile, if it exists, is tried first for every voice (see the
+        class comment); any voice it doesn't resolve falls back to the
+        <root>/<voice>/ subfolder scan, unchanged from before manifests existed. */
+    bool loadSamples (const juce::File& salamanderRoot, const juce::File& manifestFile = {});
     bool areSamplesLoaded() const noexcept { return anyVoiceLoaded.load (std::memory_order_relaxed); }
 
     void processBlock (juce::AudioBuffer<float>& outBuffer,
@@ -68,8 +80,20 @@ private:
     };
 
     bool loadFirstWavInDir (const juce::File& dir, juce::AudioBuffer<float>& dest);
+    bool readWavInto       (const juce::File& file, juce::AudioBuffer<float>& dest);
     void triggerVoice      (int voiceIndex, int blockOffset, float velocity01);
     void mixVoices         (juce::AudioBuffer<float>& outBuffer, int numSamples);
+
+    // Recursively scans `root` once for *.wav files, keyed by lowercase filename.
+    static std::unordered_map<juce::String, juce::File> buildFlatWavIndex (const juce::File& root);
+
+    // Tries `manifest`'s candidate filenames for `voiceKey` (in priority order)
+    // against `flatIndex`; returns the first match, or a default (invalid) File
+    // if there's no manifest, no entry for this voice, or none of its
+    // candidates were found.
+    static juce::File resolveFromManifest (const juce::var& manifest,
+                                           const juce::String& voiceKey,
+                                           const std::unordered_map<juce::String, juce::File>& flatIndex);
 
     SampleSet      sampleSet;   // guarded by sampleLock
     juce::SpinLock sampleLock;  // brief: held only for the cheap swap

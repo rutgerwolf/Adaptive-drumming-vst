@@ -1,0 +1,9 @@
+{
+  "_comment": "Filename candidates for the unmodified Salamander Drumkit download, in priority order. Keys match DrumSampler::kVoiceDirs exactly.",
+  "kick":  ["kick_OH_F_1.wav", "kick_OH_MF_1.wav", "kick_OH_MP_1.wav", "kick_OH_FF_1.wav", "kick_OH_P_1.wav", "kick2_OH_F_1.wav"],
+  "snare": ["snare_OH_F_1.wav", "snare_OH_MF_1.wav", "snare_OH_MP_1.wav", "snare_OH_FF_1.wav", "snare_OH_P_1.wav", "snare2_OH_F_1.wav"],
+  "hihat": ["hihatClosed_OH_F_1.wav", "hihatClosed_OH_MF_1.wav", "hihatClosed_OH_MP_1.wav", "hihatClosed_OH_FF_1.wav", "hihatClosed_OH_P_1.wav"],
+  "crash": ["crash1_OH_F_1.wav", "crash1_OH_FF_1.wav", "crash1_OH_MF_1.wav", "crash2_OH_F_1.wav", "crash3_OH_F_1.wav"],
+  "ride":  ["ride1_OH_F_1.wav", "ride1_OH_MF_1.wav", "ride1_OH_MP_1.wav", "ride2_OH_F_1.wav"],
+  "tom":   ["hiTom_OH_F_1.wav", "hiTom_OH_MF_1.wav", "hiTom_OH_MP_1.wav", "loTom_OH_F_1.wav", "loTom_OH_MF_1.wav"]
+}

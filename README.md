@@ -15,7 +15,7 @@ own tempo when used as a standalone application.
 | Feature | Details |
 |---|---|
 | Styles | Rock, Jazz, Electronic |
-| Groove axes | **Intensity** (dynamics) × **Complexity** (how busy) — continuous 0–1 sliders |
+| Groove axes | **Intensity** (dynamics) × **Complexity** (how busy) — one draggable XY pad, continuous 0–1 |
 | Sound source | **Synth** (built-in voices, no samples) or **Samples** (Salamander WAV) |
 | Adaptive groove | **Follow** mode maps a guide track's energy onto Intensity/Complexity — route in *any* track via the Sidechain input, or fall back to this effect's own input |
 | BPM / tempo | Reads host transport; **editable BPM** (double-click) otherwise |
@@ -32,30 +32,34 @@ own tempo when used as a standalone application.
 │  ADAPTIVE DRUMMER                          [ Play ] │
 ├─────────────────────────────────────────────────────┤
 │  Style      [ Rock ]  [ Jazz ]  [ Electronic ]      │
-│  Intensity  ▬▬▬▬▬▬●▬▬▬▬  0.55                       │
-│  Complexity ▬▬▬▬▬▬●▬▬▬▬  0.55                       │
+│                                                     │
+│  GROOVE                                            │
+│  ┌───────────────────────┐                         │
+│  │ INTENSITY             │                         │
+│  │            ●          │                         │
+│  │                       │                         │
+│  │            COMPLEXITY │                         │
+│  └───────────────────────┘                         │
+│                                                     │
 │  Follow  [ Follow ]   ENERGY ▕███████░░░░░░░▏        │
 │  Sound   [ Synth ] [ Samples ]                      │
 ├─────────────────────────────────────────────────────┤
-│  BPM  120.0  (type to set)                          │
-│                                                     │
-│  Volume ◎                                           │
+│  BPM  120.0  (type to set)          Volume ◎        │
 ├─────────────────────────────────────────────────────┤
-│  Samples: kick/ snare/ hihat/ crash/ ride/ tom/     │
-│  [Load samples...]                                  │
+│  [Load samples...]      Samples loaded              │
 └─────────────────────────────────────────────────────┘
-         420 × 416 px
+         420 × 562 px
 ```
 
 - **Style row** — radio buttons (group 1); selects the groove vocabulary.
 - **Play / Stop** (top-right) — transport toggle. In the standalone it starts/stops the drummer; in a plugin it also plays while the host transport is stopped.
-- **Intensity / Complexity sliders** — the 2-D groove axes: Intensity is per-hit dynamics, Complexity is how busy the pattern is. Continuous 0–1, replacing the old 3-step density buttons (a visual XY pad is a later UI pass). Disabled and shown live while **Follow** is on (then they're automatic).
-- **Follow toggle** — when on, Intensity/Complexity track a guide signal's energy instead of the manual sliders — a different track routed into the Sidechain input if connected, otherwise this effect's own input.
+- **Groove XY pad** — the 2-D groove axes in one draggable pad: X is Complexity (how busy), Y is Intensity (per-hit dynamics), matching GarageBand Drummer's own X/Y grid. Drag anywhere in the pad to set both at once; double-click resets to the default (0.55, 0.55). Disabled and shown live while **Follow** is on (then it's automatic).
+- **Follow toggle** — when on, Intensity/Complexity track a guide signal's energy instead of manual dragging — a different track routed into the Sidechain input if connected, otherwise this effect's own input.
 - **Energy meter** — live 0–1 guide energy, refreshed at 10 Hz; drives the adaptive groove.
 - **Sound** — choose **Synth** (built-in drum voices, no samples) or **Samples** (Salamander WAV).
 - **BPM field** — shows the live tempo (refreshed at 10 Hz). **Double-click to type a tempo** (40–240) — this is how you set the speed in the Standalone. When a DAW transport supplies the tempo the field locks and follows the host.
 - **Volume knob** — rotary (drag up/down or left/right), range 0–1, default 0.8.
-- **Load samples…** — opens a folder chooser; expects the Salamander layout described below.
+- **Load samples…** — opens a folder chooser; point it at an unmodified Salamander Drumkit download (auto-recognised, see [Samples](#samples)) or a manually-sorted folder for other packs.
 
 ---
 
@@ -94,7 +98,7 @@ a nested folder" layout is correct and required.
 | `density` | Choice | 0 Sparse · 1 Medium · 2 Full | 1 | Legacy; kept registered for parameter-ID stability. No longer read by `processBlock()`, only used to migrate a pre-2.0 saved session's `intensity`/`complexity` |
 | `bpm` | Float | 40–240 (step 0.1) | 120 | Tempo; **editable in the UI** (double-click the BPM field). Host tempo overrides it when present |
 | `volume` | Float | 0–1 (step 0.01) | 0.8 | Output gain |
-| `follow` | Bool | off · on | off | Adaptive intensity/complexity from the guide track (overrides the sliders) |
+| `follow` | Bool | off · on | off | Adaptive intensity/complexity from the guide track (overrides the XY pad) |
 | `source` | Choice | 0 Synth · 1 Samples | 0 | Sound source: synthesised voices or WAV samples |
 | `play` | Bool | off · on | off | Transport: generate drums (also driven by the host transport) |
 
@@ -145,8 +149,8 @@ drives Intensity and Complexity automatically:
   it on the track you want it to react to). **Standalone** has no "other track", so
   it always uses this fallback.
 
-With Follow off, no guide is analysed and the manual **Intensity/Complexity** sliders
-are used directly. The `style` stays manual in both modes.
+With Follow off, no guide is analysed and the manual **Intensity/Complexity** XY pad
+is used directly. The `style` stays manual in both modes.
 
 > When there's no guide at all (nothing routed in, and the main input is silent or
 > disabled), the energy falls to zero (Sparse).
@@ -264,12 +268,30 @@ VST3 with [pluginval](https://github.com/Tracktion/pluginval) (strictness 10).
 The Salamander Drumkit WAV files are **not included** in this repository (~2 GB, CC BY 3.0).
 
 1. Download from <https://archive.org/details/SalamanderDrumkit>.
-2. Extract and place the WAV files in `assets\samples\salamander\` next to the
-   cloned repo, using this layout:
+2. Extract it — the download is a **flat, SFZ-mapped kit**, not sorted into
+   per-instrument folders. Files are named like `kick_OH_F_1.wav`,
+   `snare_OH_MF_1.wav`, `hihatClosed_OH_F_1.wav`, and so on, all at (roughly)
+   one folder level.
+3. Click **Load samples…** in the plugin UI and point it straight at the
+   extracted folder — **no manual sorting needed.**
+
+Loading works via a small shipped manifest (`assets/salamander_manifest.json`)
+that maps each of the plugin's 6 voices (kick/snare/hihat/crash/ride/tom) to a
+priority list of the real Salamander filenames. One recursive scan of the
+folder you pick matches those names, however deep they sit — so the
+unmodified download just works.
+
+The chosen folder is **remembered in the plugin state**, so it is reloaded
+automatically when you reopen the session or the plugin — you only need to
+pick it once.
+
+**Other sample packs.** If a pack doesn't match the manifest, any voice it
+can't resolve falls back to the original folder-per-voice layout — this is
+still fully supported, per voice (not all-or-nothing):
 
 ```
-salamander\
-├── kick\          e.g. kick_OH_F_1.wav, kick_OH_MP_1.wav …
+<your folder>\
+├── kick\          one or more WAV files; the first one found is used
 ├── snare\
 ├── hihat\
 ├── crash\
@@ -277,10 +299,8 @@ salamander\
 └── tom\
 ```
 
-Alternatively, click **Load samples…** in the plugin UI and point it at any folder
-that follows the layout above. The chosen folder is **remembered in the plugin
-state**, so it is reloaded automatically when you reopen the session or the
-plugin — you only need to pick it once.
+A voice with neither a manifest match nor a matching subfolder just stays
+silent — the rest of the kit still loads and plays.
 
 ---
 
@@ -292,10 +312,12 @@ Adaptive-drumming-vst\
 ├── .gitmodules                       # JUCE submodule
 ├── .github\workflows\ci.yml          # CI: Linux + Windows build, tests, pluginval
 ├── assets\
+│   ├── salamander_manifest.json      # Maps voices -> real Salamander filenames
 │   └── samples\salamander\           # Salamander Drumkit (not in repo)
 ├── src\
 │   ├── PluginProcessor.h/.cpp        # APVTS, host BPM sync, transport, state I/O
-│   ├── PluginEditor.h/.cpp           # 420×416 UI (incl. Follow + energy meter)
+│   ├── PluginEditor.h/.cpp           # 420×562 UI (incl. Follow + energy meter)
+│   ├── XYPad.h/.cpp                  # Draggable 2-D groove pad (Complexity x Intensity)
 │   └── drummer\
 │       ├── AdaptiveDrummer.h/.cpp    # Orchestrator
 │       ├── DrumPattern.h/.cpp        # GrooveTable: 2D intensity x complexity model

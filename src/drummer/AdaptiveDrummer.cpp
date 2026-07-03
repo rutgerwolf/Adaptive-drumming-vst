@@ -80,9 +80,9 @@ void AdaptiveDrummer::setHostTimeline (bool isPlaying, bool hasPpqPosition, doub
     hostPpqPosition = ppqPosition;
 }
 
-bool AdaptiveDrummer::loadSamples (const juce::File& root)
+bool AdaptiveDrummer::loadSamples (const juce::File& root, const juce::File& manifestFile)
 {
-    return drumSampler.loadSamples (root);
+    return drumSampler.loadSamples (root, manifestFile);
 }
 
 int AdaptiveDrummer::ppqToPlayhead (double ppqPosition, int patternLenSamples,
