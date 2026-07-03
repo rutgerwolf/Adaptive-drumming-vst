@@ -4,6 +4,24 @@
 // Where the last successfully-loaded sample folder is remembered in plugin state.
 static const juce::Identifier kSamplesPathId { "samplesPath" };
 
+// Looks for the shipped Salamander manifest (see DrumSampler's class comment)
+// next to the plugin binary, then next to the host/standalone executable —
+// the same two-candidate search autoLoadSamples() uses for the kit itself.
+static juce::File findShippedManifest()
+{
+    for (auto loc : { juce::File::currentExecutableFile,
+                      juce::File::currentApplicationFile })
+    {
+        const auto candidate = juce::File::getSpecialLocation (loc)
+                                    .getParentDirectory()
+                                    .getChildFile ("assets/salamander_manifest.json");
+        if (candidate.existsAsFile())
+            return candidate;
+    }
+
+    return {};
+}
+
 // ── Parameter layout ──────────────────────────────────────────────────────────
 
 juce::AudioProcessorValueTreeState::ParameterLayout
@@ -253,10 +271,14 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
                     p->setValueNotifyingHost (p->convertTo0to1 (intensity01));
             }
 
-            // Re-load the kit this session was saved with.
+            // Re-load the kit this session was saved with. Threading the manifest
+            // through here too matters: without it, a session saved while pointed
+            // at a raw, unsorted Salamander download would silently fail to
+            // reload, since the remembered root has no per-voice subfolders for
+            // the old fallback scan to find.
             const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();
             if (remembered.isNotEmpty())
-                drummer.loadSamples (juce::File (remembered));
+                drummer.loadSamples (juce::File (remembered), findShippedManifest());
         }
 }
 
@@ -264,7 +286,7 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
 
 bool AdaptiveDrummerProcessor::loadSamples (const juce::File& samplesRoot)
 {
-    const bool ok = drummer.loadSamples (samplesRoot);
+    const bool ok = drummer.loadSamples (samplesRoot, findShippedManifest());
     if (ok)
         apvts.state.setProperty (kSamplesPathId, samplesRoot.getFullPathName(), nullptr);
     return ok;
@@ -290,8 +312,9 @@ void AdaptiveDrummerProcessor::autoLoadSamples()
                             .getParentDirectory()
                             .getChildFile ("assets/samples/salamander"));
 
+    const auto manifest = findShippedManifest();
     for (const auto& dir : candidates)
-        if (dir.isDirectory() && drummer.loadSamples (dir))
+        if (dir.isDirectory() && drummer.loadSamples (dir, manifest))
         {
             apvts.state.setProperty (kSamplesPathId, dir.getFullPathName(), nullptr);
             return;

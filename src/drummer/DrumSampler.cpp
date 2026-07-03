@@ -16,7 +16,30 @@ void DrumSampler::prepare (double sampleRate)
     currentSampleRate = sampleRate;
 }
 
-bool DrumSampler::loadSamples (const juce::File& root)
+std::unordered_map<juce::String, juce::File> DrumSampler::buildFlatWavIndex (const juce::File& root)
+{
+    std::unordered_map<juce::String, juce::File> index;
+    for (const auto& entry : juce::RangedDirectoryIterator (root, true, "*.wav"))
+        index.emplace (entry.getFile().getFileName().toLowerCase(), entry.getFile());
+    return index;
+}
+
+juce::File DrumSampler::resolveFromManifest (const juce::var& manifest,
+                                             const juce::String& voiceKey,
+                                             const std::unordered_map<juce::String, juce::File>& flatIndex)
+{
+    if (auto* candidates = manifest.getProperty (voiceKey, {}).getArray())
+        for (const auto& candidate : *candidates)
+        {
+            const auto found = flatIndex.find (candidate.toString().toLowerCase());
+            if (found != flatIndex.end())
+                return found->second;
+        }
+
+    return {};
+}
+
+bool DrumSampler::loadSamples (const juce::File& root, const juce::File& manifestFile)
 {
     if (! root.isDirectory())
     {
@@ -25,19 +48,30 @@ bool DrumSampler::loadSamples (const juce::File& root)
         return false;
     }
 
+    // One pass over the whole tree, reused for every voice below, rather than
+    // a per-voice scan.
+    const auto flatIndex = buildFlatWavIndex (root);
+    const auto manifest  = manifestFile.existsAsFile() ? juce::JSON::parse (manifestFile) : juce::var();
+
     // Build the new set off the audio thread — no lock held during file I/O.
     SampleSet newSet;
     for (int i = 0; i < kNumVoices; ++i)
     {
-        const auto dir = root.getChildFile (kVoiceDirs[i]);
-        if (loadFirstWavInDir (dir, newSet.samples[i]))
+        const juce::String voiceKey (kVoiceDirs[i]);
+
+        const auto manifestMatch = resolveFromManifest (manifest, voiceKey, flatIndex);
+        const bool loadedThisVoice = manifestMatch.existsAsFile()
+            ? readWavInto (manifestMatch, newSet.samples[i])
+            : loadFirstWavInDir (root.getChildFile (kVoiceDirs[i]), newSet.samples[i]);
+
+        if (loadedThisVoice)
         {
             newSet.anyLoaded = true;
-            DBG ("DrumSampler: loaded " + juce::String (kVoiceDirs[i]));
+            DBG ("DrumSampler: loaded " + voiceKey);
         }
         else
         {
-            DBG ("DrumSampler: no WAV for " + juce::String (kVoiceDirs[i]) + " — silent");
+            DBG ("DrumSampler: no WAV for " + voiceKey + " — silent");
         }
     }
 
@@ -120,10 +154,15 @@ bool DrumSampler::loadFirstWavInDir (const juce::File& dir,
         }
     }
 
-    if (! target.existsAsFile()) return false;
+    return readWavInto (target, dest);
+}
+
+bool DrumSampler::readWavInto (const juce::File& file, juce::AudioBuffer<float>& dest)
+{
+    if (! file.existsAsFile()) return false;
 
     std::unique_ptr<juce::AudioFormatReader> reader (
-        formatManager.createReaderFor (target));
+        formatManager.createReaderFor (file));
     if (reader == nullptr) return false;
 
     dest.setSize (static_cast<int> (reader->numChannels),
