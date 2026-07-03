@@ -134,6 +134,46 @@ public:
             expectGreaterThan (peakLoud, peakQuiet * 1.15f,
                                "intensity 0.9 must be measurably louder than 0.2");
         }
+
+        beginTest ("coincident hits at Full/max intensity never exceed full scale");
+        {
+            // Regression for the ~1.9 peak finding: Rock/Electronic's Full step 0
+            // (Crash|Kick|HiHat coincident) with every voice at velocity 1.0.
+            // Sweep every step of every style at Full complexity/max intensity —
+            // whichever step is densest, the -6 dB rebalance + soft clip must
+            // keep the mix within [-1, 1].
+            const DrumPattern::Style styles[] = {
+                DrumPattern::Style::Rock, DrumPattern::Style::Jazz, DrumPattern::Style::Electronic
+            };
+
+            float worstPeak = 0.0f;
+            for (auto style : styles)
+            {
+                DrumPattern p;
+                p.loadStyle (style);
+                p.setComplexity (1.0f);
+                p.setIntensity  (1.0f);
+                const int len = p.getLengthInSamples (bpm, sr);
+
+                for (int step = 0; step < DrumPattern::kSteps; ++step)
+                {
+                    const int stepLen   = len / DrumPattern::kSteps;
+                    const int playhead  = step * stepLen;
+
+                    DrumSynth synth;
+                    synth.prepare (sr);
+                    juce::AudioBuffer<float> buf (1, 512);
+                    buf.clear();
+                    synth.processBlock (buf, 512, sr, p, bpm, playhead, 0);
+
+                    worstPeak = juce::jmax (worstPeak, buf.getMagnitude (0, 512));
+                }
+            }
+
+            logMessage ("worst coincident-hit peak across all styles/steps at Full/max: "
+                        + juce::String (worstPeak, 4));
+            expect (worstPeak <= 1.0f, "synth mix must never exceed full scale");
+        }
     }
 };
 

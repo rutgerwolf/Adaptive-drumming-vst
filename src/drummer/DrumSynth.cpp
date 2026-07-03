@@ -3,6 +3,20 @@
 
 #include <cmath>
 
+namespace
+{
+    // Per-voice amplitudes below were authored without headroom for coincident
+    // hits — Rock/Electronic Full's step 0 (Crash|Kick|HiHat all firing
+    // together) peaks around 1.9 at velocity 1. A uniform -6 dB scale (applied
+    // post-sum, which is equivalent to scaling every voice individually since
+    // summation is linear) preserves each voice's relative balance while
+    // buying headroom; std::tanh on top is a soft safety net for whatever
+    // still pokes above full scale on the loudest coincident hits, chosen over
+    // s/(1+|s|) because its unit slope at the origin extends further (audibly
+    // gentler on ordinary, non-coincident hits).
+    constexpr float kVoiceGainScale = 0.5012f;   // 10^(-6/20)
+}
+
 void DrumSynth::prepare (double newSampleRate)
 {
     sampleRate = newSampleRate > 0.0 ? newSampleRate : 44100.0;
@@ -94,8 +108,11 @@ void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
         }
 
         if (s != 0.0f)
+        {
+            s = std::tanh (s * kVoiceGainScale);
             for (int ch = 0; ch < numCh; ++ch)
                 chans[ch][i] += s;
+        }
     }
 
     // A note started this block at startOffset; from the next block it continues
