@@ -88,6 +88,23 @@ void DrumSynth::processBlock (juce::AudioBuffer<float>& outBuffer,
                         [this] (int voice, int offset, float velocity01)
                         { triggerVoice (voice, offset, velocity01); });
 
+    mixActiveVoices (outBuffer, numSamples);
+}
+
+void DrumSynth::renderTail (juce::AudioBuffer<float>& outBuffer,
+                            int                       numSamples,
+                            double                    newSampleRate)
+{
+    // No forEachStepTrigger call — fires nothing new, only decays whatever is
+    // already active. Used while the transport is stopped so a ringing tail
+    // (e.g. the ~1.2 s crash decay) finishes naturally instead of being cut
+    // off by an immediate silence-reset.
+    sampleRate = newSampleRate > 0.0 ? newSampleRate : sampleRate;
+    mixActiveVoices (outBuffer, numSamples);
+}
+
+void DrumSynth::mixActiveVoices (juce::AudioBuffer<float>& outBuffer, int numSamples)
+{
     const int numCh = juce::jmin (outBuffer.getNumChannels(), 8);
     float*    chans[8] { nullptr };
     for (int ch = 0; ch < numCh; ++ch)

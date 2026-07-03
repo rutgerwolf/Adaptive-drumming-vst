@@ -60,6 +60,11 @@ public:
                        int                       playheadSample,
                        uint32_t                  barIndex);
 
+    /** Decays whatever voices are already active without firing new triggers.
+        Call instead of processBlock() while the transport is stopped, so a
+        ringing tail finishes naturally rather than being cut off. */
+    void renderTail (juce::AudioBuffer<float>& outBuffer, int numSamples);
+
     void reset();
 
 private:
