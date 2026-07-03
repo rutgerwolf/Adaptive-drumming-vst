@@ -24,6 +24,11 @@
  * layer masks exactly. (Host-visible intensity/complexity parameters arrive
  * in a later roadmap step; until then setDensity() is the only driver.)
  *
+ * Follow (guide-track modulation, see PluginProcessor) never calls
+ * setComplexity() — complexity is always the manual/grid value. Follow's only
+ * hook is setFollowAccent(), a velocity-only term in stepVelocity() gated by
+ * kFlagAccent/kFlagGhost, so it can never change which cells fire.
+ *
  * RT-safety: all tables are const file-scope data; loadStyle() only re-points
  * a pointer. stepFires()/stepVelocity() are pure arithmetic per trigger — no
  * allocation, no locks, no RNG state.
@@ -38,7 +43,8 @@ struct StepCell
     uint8_t complexityThreshold;  ///< cell is eligible iff complexity255 >= this
     uint8_t probability;          ///< 0..255; 255 = deterministic backbone, < 255 = hash-gated
     int8_t  velRandRange;         ///< ± humanization (velocity units) via the seeded hash
-    uint8_t flags;                ///< see kFlag* below (informational; reserved for later steps)
+    uint8_t flags;                ///< see kFlag* below; kFlagAccent/kFlagGhost weight the
+                                  ///< Follow accent term in stepVelocity() (see DrumPattern::setFollowAccent)
 
     static constexpr uint8_t kFlagAccent   = 1 << 0;
     static constexpr uint8_t kFlagGhost    = 1 << 1;
@@ -112,6 +118,20 @@ public:
     void     setSeed (uint32_t newSeed) noexcept { grooveSeed = newSeed; }
     uint32_t getSeed () const noexcept           { return grooveSeed; }
 
+    /** Value accent01 sits at when the Follow accent term in stepVelocity()
+        vanishes (see setFollowAccent). Public for tests. */
+    static constexpr float kAccentNeutral       = 0.25f;
+    /** Follow accent weight for cells flagged neither kFlagAccent nor
+        kFlagGhost — a lean, not a full hit (see setFollowAccent). */
+    static constexpr float kAccentWeightRegular = 0.4f;
+
+    /** Follow's guide-accent modulation (velocity-only; never touches which
+        cells fire — see the class comment). accent01 is EnergyAnalyzer's
+        accent signal; depth01 (0 disables, the default) scales its effect.
+        Applied immediately, like setIntensity() — not bar-latched, since
+        this is non-structural. */
+    void setFollowAccent (float accent01, float depth01) noexcept;
+
     // ── Per-trigger queries (audio thread; pure arithmetic) ───────────────────
     /** True iff (voice, step) sounds in bar barIndex at the current complexity
         and seed. Out-of-range voice/step returns false — this deliberately
@@ -142,6 +162,9 @@ private:
     uint8_t  complexity255   { 0 };             // complexity scaled to the threshold domain
     float    intensityShaped { 0.0f };          // intensity^0.7, precomputed per set
     uint32_t grooveSeed      { kDefaultGrooveSeed };
+
+    float followAccent      { kAccentNeutral }; // EnergyAnalyzer's accent signal (neutral = no-op)
+    float followAccentDepth { 0.0f };           // 0 = Follow accent modulation disabled (default)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrumPattern)
 };

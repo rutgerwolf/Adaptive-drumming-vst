@@ -73,6 +73,11 @@ void AdaptiveDrummer::setIntensity (float intensity01) noexcept
     drumPattern.setIntensity (intensity01);
 }
 
+void AdaptiveDrummer::setFollowAccent (float accent01, float depth01) noexcept
+{
+    drumPattern.setFollowAccent (accent01, depth01);
+}
+
 void AdaptiveDrummer::setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition) noexcept
 {
     hostIsPlaying   = isPlaying;

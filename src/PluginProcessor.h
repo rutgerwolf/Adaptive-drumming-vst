@@ -11,22 +11,27 @@
  * JUCE AudioProcessor wrapping AdaptiveDrummer v1.
  * Reads host BPM from the DAW playhead; falls back to the "bpm" parameter.
  *
- * Built as an audio effect / generator: it outputs drums, and when "follow" is on
- * the 2-D groove axes track the energy of a guide signal instead of the manual
- * "intensity"/"complexity" parameters. The guide is a user-chosen *other* track
- * routed into the (disabled-by-default) Sidechain bus when connected; otherwise
- * it falls back to this effect's own input.
+ * Built as an audio effect / generator: it outputs drums. The "complexity"
+ * parameter (which cells fire) is ALWAYS the grid's — Follow never touches
+ * it. When "follow" is on and a guide is connected, it modulates the
+ * effective intensity (bounded blend toward the guide's phrase-level energy,
+ * around the grid's base "intensity") and adds a velocity-only accent term
+ * at step boundaries (see DrumPattern::setFollowAccent) — a modulation layer
+ * on top of the grid, not a replacement of it. The guide is a user-chosen
+ * *other* track routed into the (disabled-by-default) Sidechain bus when
+ * connected; otherwise it falls back to this effect's own input; with no
+ * guide connected at all, Follow modulates nothing.
  *
  * Parameters (managed by apvts, not exhaustive):
  *   bpm         float  40-240  default 120   manual BPM (ignored when host provides tempo)
  *   style       choice Rock/Jazz/Electronic  default Rock
- *   intensity   float  0-1     default 0.55  dynamics axis (used when Follow is off)
- *   complexity  float  0-1     default 0.55  structural axis (used when Follow is off)
+ *   intensity   float  0-1     default 0.55  dynamics axis — the grid's base; Follow modulates around it
+ *   complexity  float  0-1     default 0.55  structural axis — always the grid's, Follow never touches it
  *   density     choice Sparse/Medium/Full    legacy; kept registered for parameter-ID
  *                                            stability, no longer read by processBlock()
  *                                            except to migrate a pre-2.0 saved session
  *   volume      float  0-1     default 0.8
- *   follow      bool           default off   adaptive axes from the guide track
+ *   follow      bool           default off   guide-driven accent + intensity modulation on top of the grid
  */
 class AdaptiveDrummerProcessor : public juce::AudioProcessor
 {
@@ -71,11 +76,14 @@ public:
     /** Smoothed guide-track energy in [0, 1] (for the editor meter). */
     float getEnergy () const noexcept { return energyAnalyzer.getEnergy(); }
 
-    /** The 2-D groove axes actually in use this block (manual sliders, or
-        adaptive — via the guide energy's legacy density mapped through
-        DrumPattern::mapLegacy — when Follow is on). Readable from the editor
-        so the Intensity/Complexity sliders can reflect Follow's live value
-        while disabled, the same way the old density buttons did. */
+    /** How far the guide is currently accenting (0..1; see
+        EnergyAnalyzer::getAccent). For the editor's Follow overlay. */
+    float getGuideAccent () const noexcept { return energyAnalyzer.getAccent(); }
+
+    /** The 2-D groove axes actually in use this block: complexity is always
+        the grid's; intensity is the grid's base, modulated toward the guide
+        when Follow is on and connected. Readable from the editor for the XY
+        pad's live readout. */
     float getCurrentComplexity () const noexcept { return currentComplexityState.load (std::memory_order_relaxed); }
     float getCurrentIntensity  () const noexcept { return currentIntensityState.load  (std::memory_order_relaxed); }
 

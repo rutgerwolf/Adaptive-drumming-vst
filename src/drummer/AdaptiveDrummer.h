@@ -56,6 +56,10 @@ public:
     void setComplexity (float complexity01) noexcept;
     void setIntensity  (float intensity01)  noexcept;
 
+    /** Follow's guide-accent modulation (see DrumPattern::setFollowAccent) —
+        velocity-only, applied immediately like setIntensity(). */
+    void setFollowAccent (float accent01, float depth01) noexcept;
+
     /** Choose the sound source: synthesised voices (no samples needed) or the
         WAV sampler. */
     void setUseSynth (bool shouldUseSynth) noexcept { useSynth = shouldUseSynth; }
