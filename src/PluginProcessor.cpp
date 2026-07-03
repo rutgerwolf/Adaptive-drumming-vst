@@ -136,6 +136,7 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto       mainOut    = getBusBuffer (buffer, false, 0);  // in-place: holds the input on entry
     const int  numSamples = buffer.getNumSamples();
     const bool follow     = *apvts.getRawParameterValue ("follow") > 0.5f;
+    bool       guideAvailable = false;
 
     // Guide priority: a connected Sidechain bus (a user-chosen *other* track,
     // routed in via the host's sidechain/send routing) wins; otherwise fall
@@ -149,9 +150,15 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                          && sidechainBus->getNumberOfChannels() > 0;
 
         if (sidechainConnected)
+        {
             energyAnalyzer.processBlock (getBusBuffer (buffer, true, 1), numSamples);
+            guideAvailable = true;
+        }
         else if (auto* mainIn = getBus (true, 0); mainIn != nullptr && mainIn->isEnabled())
+        {
             energyAnalyzer.processBlock (mainOut, numSamples);
+            guideAvailable = true;
+        }
         else
             energyAnalyzer.processSilence (numSamples);
     }
@@ -206,22 +213,40 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Sound source: 0 = Synth (no samples needed), 1 = Samples.
     drummer.setUseSynth (static_cast<int> (*apvts.getRawParameterValue ("source")) == 0);
 
-    // The 2-D groove axes: adaptive from the guide energy when Follow is on
-    // (still driven by EnergyAnalyzer's 3-step hysteresis, mapped onto the
-    // axes via the same legacy mapping the "density" parameter used), else
-    // the manual Intensity/Complexity sliders directly.
-    float complexity01, intensity01;
-    if (follow)
-        DrumPattern::mapLegacy (energyAnalyzer.getDensity(), complexity01, intensity01);
-    else
+    // The 2-D groove axes. Complexity is ALWAYS the grid's — Follow never
+    // writes it (see DrumPattern's class comment). When Follow is on and a
+    // guide is connected, it modulates intensity — a bounded blend toward the
+    // guide's phrase-level "macro" energy around the grid's base value — and
+    // drives a velocity-only accent term (DrumPattern::setFollowAccent). With
+    // no guide connected, Follow modulates nothing (manual passthrough).
+    const float baseComplexity = *apvts.getRawParameterValue ("complexity");
+    const float baseIntensity  = *apvts.getRawParameterValue ("intensity");
+
+    float intensityEff = baseIntensity;
+    float accent01     = 0.0f;
+    float accentDepth  = 0.0f;
+
+    if (follow && guideAvailable)
     {
-        complexity01 = *apvts.getRawParameterValue ("complexity");
-        intensity01  = *apvts.getRawParameterValue ("intensity");
+        // Step 21 promotes this to a "Follow Amount" APVTS parameter; a fixed
+        // depth for now. Ceilings keep the grid authoritative even at max
+        // Follow strength (0.75 blend ⇒ the grid always keeps >= 25% weight).
+        constexpr float kFollowAmount      = 0.6f;
+        constexpr float kMaxIntensityBlend = 0.75f;
+        constexpr float kMaxAccentDepth    = 0.40f;
+
+        const float blend = kMaxIntensityBlend * kFollowAmount;
+        intensityEff = baseIntensity + blend * (energyAnalyzer.getMacroEnergy() - baseIntensity);
+        accent01     = energyAnalyzer.getAccent();
+        accentDepth  = kMaxAccentDepth * kFollowAmount;
     }
-    drummer.setComplexity (complexity01);
-    drummer.setIntensity  (intensity01);
-    currentComplexityState.store (complexity01, std::memory_order_relaxed);
-    currentIntensityState.store  (intensity01,  std::memory_order_relaxed);
+
+    drummer.setComplexity   (baseComplexity);          // always the grid — the hard constraint
+    drummer.setIntensity    (intensityEff);
+    drummer.setFollowAccent (accent01, accentDepth);
+
+    currentComplexityState.store (baseComplexity, std::memory_order_relaxed);
+    currentIntensityState.store  (intensityEff,   std::memory_order_relaxed);
 
     // Generate drums into the main output bus (silence + rewind when stopped).
     if (playing)

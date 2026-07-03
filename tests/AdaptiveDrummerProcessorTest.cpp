@@ -161,6 +161,181 @@ public:
             proc.releaseResources();
         }
 
+        beginTest ("Follow never changes the complexity readout, even if the parameter moves mid-run");
+        {
+            AdaptiveDrummerProcessor proc;
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());
+            layout.outputBuses.add (juce::AudioChannelSet::stereo());
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // sidechain, enabled
+            expect (proc.setBusesLayout (layout), "the 3-bus (sidechain-enabled) layout must be settable");
+
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+
+            auto* complexityParam = proc.apvts.getParameter ("complexity");
+            const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
+            juce::AudioBuffer<float> buffer (totalChannels, blockSize);
+            juce::MidiBuffer midi;
+
+            double phase = 0.0;
+            const double phaseInc = juce::MathConstants<double>::twoPi * 440.0 / sampleRate;
+            auto renderLoudSidechainBlock = [&]
+            {
+                buffer.clear();
+                for (int ch = 2; ch < 4; ++ch)
+                {
+                    float* d = buffer.getWritePointer (ch);
+                    double p = phase;
+                    for (int i = 0; i < blockSize; ++i) { d[i] = 0.9f * (float) std::sin (p); p += phaseInc; }
+                }
+                phase += phaseInc * blockSize;
+                proc.processBlock (buffer, midi);
+            };
+
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.3f));
+            const float expected1 = *proc.apvts.getRawParameterValue ("complexity");
+            for (int b = 0; b < 40; ++b)
+            {
+                renderLoudSidechainBlock();
+                expectEquals (proc.getCurrentComplexity(), expected1,
+                              "complexity must equal the grid parameter on every single block");
+            }
+
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.8f));   // change mid-run
+            const float expected2 = *proc.apvts.getRawParameterValue ("complexity");
+            for (int b = 0; b < 40; ++b)
+            {
+                renderLoudSidechainBlock();
+                expectEquals (proc.getCurrentComplexity(), expected2,
+                              "complexity must track a parameter change instantly, still exactly the grid's value");
+            }
+
+            proc.releaseResources();
+        }
+
+        beginTest ("Follow modulates intensity around the grid's base — up when loud, down when silent");
+        {
+            AdaptiveDrummerProcessor proc;
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // main in (silent throughout)
+            layout.outputBuses.add (juce::AudioChannelSet::stereo());
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // sidechain, enabled
+            expect (proc.setBusesLayout (layout), "the 3-bus (sidechain-enabled) layout must be settable");
+
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+
+            auto* intensityParam = proc.apvts.getParameter ("intensity");
+            intensityParam->setValueNotifyingHost (intensityParam->convertTo0to1 (0.5f));
+            const float base = *proc.apvts.getRawParameterValue ("intensity");
+
+            const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
+            juce::AudioBuffer<float> buffer (totalChannels, blockSize);
+            juce::MidiBuffer midi;
+
+            double phase = 0.0;
+            const double phaseInc = juce::MathConstants<double>::twoPi * 440.0 / sampleRate;
+            auto feedSidechain = [&] (float amplitude, int numBlocks)
+            {
+                for (int b = 0; b < numBlocks; ++b)
+                {
+                    buffer.clear();
+                    for (int ch = 2; ch < 4; ++ch)
+                    {
+                        float* d = buffer.getWritePointer (ch);
+                        double p = phase;
+                        for (int i = 0; i < blockSize; ++i) { d[i] = amplitude * (float) std::sin (p); p += phaseInc; }
+                    }
+                    phase += phaseInc * blockSize;
+                    proc.processBlock (buffer, midi);
+                }
+            };
+
+            feedSidechain (0.9f, 100);   // loud guide, long enough for the macro envelope to settle up
+            expectGreaterThan (proc.getCurrentIntensity(), base,
+                                "a loud connected guide must raise the effective intensity above the grid's base");
+
+            feedSidechain (0.0f, 100);   // sidechain still enabled/connected, but silent now
+            expectLessThan (proc.getCurrentIntensity(), base,
+                            "a connected-but-silent guide must lower the effective intensity below the grid's base");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("Follow off, or on with no guide connected, is an exact manual passthrough");
+        {
+            // Follow off: the classic case.
+            {
+                AdaptiveDrummerProcessor proc;
+                proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+                proc.prepareToPlay (44100.0, 512);
+
+                auto* intensityParam  = proc.apvts.getParameter ("intensity");
+                auto* complexityParam = proc.apvts.getParameter ("complexity");
+                intensityParam->setValueNotifyingHost  (intensityParam->convertTo0to1  (0.7f));
+                complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.15f));
+                const float expectedIntensity  = *proc.apvts.getRawParameterValue ("intensity");
+                const float expectedComplexity = *proc.apvts.getRawParameterValue ("complexity");
+
+                juce::AudioBuffer<float> buffer (2, 512);
+                juce::MidiBuffer midi;
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+
+                expectEquals (proc.getCurrentIntensity(),  expectedIntensity,  "Follow off: intensity must equal the grid exactly");
+                expectEquals (proc.getCurrentComplexity(), expectedComplexity, "Follow off: complexity must equal the grid exactly");
+                proc.releaseResources();
+            }
+
+            // Follow on, but no guide at all: disabled main input, no sidechain
+            // connected — the guideAvailable == false branch (manual passthrough,
+            // a deliberate improvement over following silence down to nothing).
+            {
+                AdaptiveDrummerProcessor proc;
+
+                juce::AudioProcessor::BusesLayout layout;
+                layout.inputBuses.add  (juce::AudioChannelSet::disabled());
+                layout.outputBuses.add (juce::AudioChannelSet::stereo());
+                layout.inputBuses.add  (juce::AudioChannelSet::disabled());   // sidechain, off
+                expect (proc.setBusesLayout (layout), "disabled-main-in layout must be settable");
+
+                proc.prepareToPlay (44100.0, 512);
+                proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+
+                auto* intensityParam  = proc.apvts.getParameter ("intensity");
+                auto* complexityParam = proc.apvts.getParameter ("complexity");
+                intensityParam->setValueNotifyingHost  (intensityParam->convertTo0to1  (0.7f));
+                complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.15f));
+                const float expectedIntensity  = *proc.apvts.getRawParameterValue ("intensity");
+                const float expectedComplexity = *proc.apvts.getRawParameterValue ("complexity");
+
+                const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
+                juce::AudioBuffer<float> buffer (juce::jmax (2, totalChannels), 512);
+                juce::MidiBuffer midi;
+
+                for (int b = 0; b < 10; ++b)
+                {
+                    buffer.clear();
+                    proc.processBlock (buffer, midi);
+                }
+
+                expectEquals (proc.getCurrentIntensity(),  expectedIntensity,
+                              "Follow on, no guide connected: intensity must still equal the grid exactly");
+                expectEquals (proc.getCurrentComplexity(), expectedComplexity,
+                              "Follow on, no guide connected: complexity must still equal the grid exactly");
+                proc.releaseResources();
+            }
+        }
+
         beginTest ("processBlock renders finite, audible audio while playing");
         {
             AdaptiveDrummerProcessor proc;

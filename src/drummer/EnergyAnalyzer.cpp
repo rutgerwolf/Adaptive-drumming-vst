@@ -11,9 +11,10 @@ void EnergyAnalyzer::prepare (double newSampleRate, int /*blockSize*/)
 void EnergyAnalyzer::reset()
 {
     envelopeLevel = 0.0f;
-    energy.store (0.0f, std::memory_order_relaxed);
-    densityState.store (static_cast<int> (DrumPattern::Density::Sparse),
-                        std::memory_order_relaxed);
+    macroLevel    = 0.0f;
+    energy.store      (0.0f, std::memory_order_relaxed);
+    macroEnergy.store (0.0f, std::memory_order_relaxed);
+    accent.store      (0.0f, std::memory_order_relaxed);
 }
 
 void EnergyAnalyzer::processBlock (const juce::AudioBuffer<float>& guide, int numSamples)
@@ -57,28 +58,19 @@ void EnergyAnalyzer::updateEnvelope (float targetEnergy, int numSamples)
     const float e = juce::jlimit (0.0f, 1.0f, envelopeLevel);
     energy.store (e, std::memory_order_relaxed);
 
-    const auto next = nextDensity (getDensity(), e);
-    densityState.store (static_cast<int> (next), std::memory_order_relaxed);
-}
+    // A slower "macro" envelope of the same target — the phrase-level contour
+    // Follow's intensity modulation tracks (PluginProcessor::processBlock).
+    const float macroTc    = (targetEnergy > macroLevel) ? kMacroAttackSec : kMacroReleaseSec;
+    const float macroCoeff = static_cast<float> (std::exp (-blockSec / juce::jmax (1.0e-4f, macroTc)));
+    macroLevel = targetEnergy + macroCoeff * (macroLevel - targetEnergy);
 
-DrumPattern::Density EnergyAnalyzer::nextDensity (DrumPattern::Density current, float e) noexcept
-{
-    switch (current)
-    {
-        case DrumPattern::Density::Sparse:
-            if (e > kUpToFull)    return DrumPattern::Density::Full;   // big jump in one step
-            if (e > kUpToMedium)  return DrumPattern::Density::Medium;
-            return DrumPattern::Density::Sparse;
+    const float m = juce::jlimit (0.0f, 1.0f, macroLevel);
+    macroEnergy.store (m, std::memory_order_relaxed);
 
-        case DrumPattern::Density::Medium:
-            if (e > kUpToFull)    return DrumPattern::Density::Full;
-            if (e < kDownToSparse) return DrumPattern::Density::Sparse;
-            return DrumPattern::Density::Medium;
-
-        case DrumPattern::Density::Full:
-        default:
-            if (e < kDownToSparse) return DrumPattern::Density::Sparse;
-            if (e < kDownToMedium) return DrumPattern::Density::Medium;
-            return DrumPattern::Density::Full;
-    }
+    // Accent: how far the fast envelope currently pokes above the slower
+    // macro contour, past a margin that rejects steady-signal jitter.
+    // Self-normalising — "louder than the guide's own recent level", not an
+    // absolute threshold, so a hot-mixed guide doesn't read as constant accents.
+    accent.store (juce::jlimit (0.0f, 1.0f, (e - m - kAccentMargin) * kAccentGain),
+                 std::memory_order_relaxed);
 }

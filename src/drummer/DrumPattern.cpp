@@ -95,13 +95,13 @@ namespace
         t.styleSalt = 0x6A617A7Au;   // 'jazz'
 
         // Kick — feathered; more syncopation with complexity.
-        t.cells[vKick][ 0] = hit (85, 115, kThrSparse);
+        t.cells[vKick][ 0] = hit (85, 115, kThrSparse, StepCell::kFlagAccent);
         t.cells[vKick][ 8] = hit (78, 108, kThrMedium);
         t.cells[vKick][11] = hit (72, 104, kThrFull);
 
         // Snare — 2 & 4.
-        t.cells[vSnare][ 4] = hit (85, 120, kThrSparse);
-        t.cells[vSnare][12] = hit (85, 120, kThrSparse);
+        t.cells[vSnare][ 4] = hit (85, 120, kThrSparse, StepCell::kFlagAccent);
+        t.cells[vSnare][12] = hit (85, 120, kThrSparse, StepCell::kFlagAccent);
 
         // Ride — quarters → 8ths → 16ths.
         for (int s = 0; s < GrooveTable::kNumSteps; ++s)
@@ -133,8 +133,8 @@ namespace
         t.cells[vKick][10] = hit (85, 118, kThrFull);
 
         // Snare — 2 & 4, plus hash-gated end-of-bar ghost fills.
-        t.cells[vSnare][ 4] = hit (90, 125, kThrSparse);
-        t.cells[vSnare][12] = hit (90, 125, kThrSparse);
+        t.cells[vSnare][ 4] = hit (90, 125, kThrSparse, StepCell::kFlagAccent);
+        t.cells[vSnare][12] = hit (90, 125, kThrSparse, StepCell::kFlagAccent);
         t.cells[vSnare][14] = ghost (12, 28, 210, 140, 10);
         t.cells[vSnare][15] = ghost (12, 26, 235, 110, 10);
 
@@ -213,6 +213,12 @@ void DrumPattern::setIntensity (float intensity01) noexcept
     intensityShaped = std::pow (i, 0.7f);   // per-set, not per-trigger
 }
 
+void DrumPattern::setFollowAccent (float accent01, float depth01) noexcept
+{
+    followAccent      = juce::jlimit (0.0f, 1.0f, accent01);
+    followAccentDepth = juce::jlimit (0.0f, 1.0f, depth01);
+}
+
 bool DrumPattern::stepFires (int voice, int step, uint32_t barIndex) const noexcept
 {
     if (voice < 0 || voice >= kNumVoices || step < 0 || step >= kSteps)
@@ -248,6 +254,20 @@ float DrumPattern::stepVelocity (int voice, int step, uint32_t barIndex) const n
                                     static_cast<uint32_t> (voice),
                                     static_cast<uint32_t> (step), 1)
                * static_cast<float> (cell.velRandRange) / 127.0f;
+
+    // Follow's guide-accent modulation (see setFollowAccent): bipolar around
+    // kAccentNeutral, so eligible cells sit a little under their manual level
+    // between guide accents and jump above it on one — contrast, not a flat
+    // boost. Ghosts are immune (weight 0); accent-flagged cells get full
+    // weight; everything else leans in at kAccentWeightRegular. depth 0 (the
+    // default) makes this an exact no-op.
+    if (followAccentDepth > 0.0f)
+    {
+        const float w = (cell.flags & StepCell::kFlagGhost)  != 0 ? 0.0f
+                       : (cell.flags & StepCell::kFlagAccent) != 0 ? 1.0f
+                       : kAccentWeightRegular;
+        vel += followAccentDepth * w * (followAccent - kAccentNeutral);
+    }
 
     return juce::jlimit (0.0f, 1.0f, vel);
 }

@@ -333,6 +333,129 @@ public:
             }
         }
 
+        beginTest ("Follow accent — never changes which cells fire (the hard constraint)");
+        {
+            for (auto style : allStyles)
+                for (float c : { 0.2f, 0.55f, 1.0f })
+                {
+                    DrumPattern p;
+                    p.loadStyle (style);
+                    p.setComplexity (c);
+
+                    bool before[kVoices][DrumPattern::kSteps][8];
+                    for (uint32_t bar = 0; bar < 8; ++bar)
+                        for (int v = 0; v < kVoices; ++v)
+                            for (int s = 0; s < DrumPattern::kSteps; ++s)
+                                before[v][s][bar] = p.stepFires (v, s, bar);
+
+                    p.setFollowAccent (1.0f, 0.4f);   // maximum Follow accent
+
+                    for (uint32_t bar = 0; bar < 8; ++bar)
+                        for (int v = 0; v < kVoices; ++v)
+                            for (int s = 0; s < DrumPattern::kSteps; ++s)
+                                expect (p.stepFires (v, s, bar) == before[v][s][bar],
+                                        styleName (style) + " complexity " + juce::String (c)
+                                        + ": Follow accent must never change stepFires (voice "
+                                        + juce::String (v) + ", step " + juce::String (s)
+                                        + ", bar " + juce::String ((int) bar) + ")");
+                }
+        }
+
+        beginTest ("Follow accent — neutral value and zero depth are exact no-ops");
+        {
+            DrumPattern p;
+            p.loadStyle (DrumPattern::Style::Rock);
+            p.setComplexity (1.0f);
+            p.setIntensity (0.6f);
+
+            float baseline[kVoices][DrumPattern::kSteps];
+            for (int v = 0; v < kVoices; ++v)
+                for (int s = 0; s < DrumPattern::kSteps; ++s)
+                    baseline[v][s] = p.stepVelocity (v, s, 3);
+
+            p.setFollowAccent (DrumPattern::kAccentNeutral, 0.4f);   // neutral accent, nonzero depth
+            for (int v = 0; v < kVoices; ++v)
+                for (int s = 0; s < DrumPattern::kSteps; ++s)
+                    expectEquals (p.stepVelocity (v, s, 3), baseline[v][s],
+                                  "accent == kAccentNeutral must be an exact no-op regardless of depth");
+
+            p.setFollowAccent (1.0f, 0.0f);   // max accent value, zero depth
+            for (int v = 0; v < kVoices; ++v)
+                for (int s = 0; s < DrumPattern::kSteps; ++s)
+                    expectEquals (p.stepVelocity (v, s, 3), baseline[v][s],
+                                  "depth == 0 must be an exact no-op regardless of accent value");
+        }
+
+        beginTest ("Follow accent — bipolar around neutral, weighted by cell flags");
+        {
+            DrumPattern p;
+            p.loadStyle (DrumPattern::Style::Rock);
+            p.setComplexity (1.0f);
+            p.setIntensity (0.5f);
+
+            const int vKick = 0, vSnare = 1, vHiHat = 2;
+            const uint32_t bar = 2;
+
+            const auto& kickCell    = p.getActiveTable().cells[vKick][0];
+            const auto& ghostCell   = p.getActiveTable().cells[vSnare][15];
+            const auto& regularCell = p.getActiveTable().cells[vHiHat][4];
+            expect ((kickCell.flags & StepCell::kFlagAccent) != 0, "Rock kick[0] must be accent-flagged");
+            expect ((ghostCell.flags & StepCell::kFlagGhost) != 0, "Rock snare[15] must be ghost-flagged");
+            expect ((regularCell.flags & (StepCell::kFlagAccent | StepCell::kFlagGhost)) == 0,
+                    "Rock hihat[4] must carry neither flag");
+
+            // Baselines at the default (no Follow) state.
+            const float kickBase    = p.stepVelocity (vKick,  0,  bar);
+            const float ghostBase   = p.stepVelocity (vSnare, 15, bar);
+            const float regularBase = p.stepVelocity (vHiHat, 4,  bar);
+
+            p.setFollowAccent (1.0f, 0.4f);   // a guide accent just landed
+            const float kickHigh    = p.stepVelocity (vKick,  0,  bar);
+            const float ghostHigh   = p.stepVelocity (vSnare, 15, bar);
+            const float regularHigh = p.stepVelocity (vHiHat, 4,  bar);
+
+            p.setFollowAccent (0.0f, 0.4f);   // between accents (the quietest reading)
+            const float kickLow    = p.stepVelocity (vKick,  0,  bar);
+            const float ghostLow   = p.stepVelocity (vSnare, 15, bar);
+            const float regularLow = p.stepVelocity (vHiHat, 4,  bar);
+
+            expectGreaterThan (kickHigh, kickBase, "a guide accent must raise an accent-flagged cell above baseline");
+            expectLessThan    (kickLow,  kickBase, "accent == 0 must lower an accent-flagged cell below baseline");
+
+            expectEquals (ghostHigh, ghostBase, "a ghost cell must be immune to the Follow accent term");
+            expectEquals (ghostLow,  ghostBase, "a ghost cell must be immune to the Follow accent term (low accent too)");
+
+            expectGreaterThan (regularHigh, regularBase, "a regular cell must still lean up on a guide accent");
+
+            // Compare the *downward* swing (base - low), not the upward one: Rock's
+            // kick[0] is authored velLow=98/velHigh=127, so at this intensity its
+            // baseline already sits close to the [0,1] ceiling — the upward term
+            // gets clamped away (exactly the near-saturation case the bipolar
+            // design exists for; see DrumPattern's setFollowAccent comment), which
+            // would make this comparison flaky in that direction. Downward from a
+            // comfortable baseline hits neither clamp, so it cleanly isolates the
+            // weight ordering the accent term is meant to test.
+            expectLessThan (regularBase - regularLow, kickBase - kickLow,
+                            "a regular cell's downward swing must be smaller than an accent-flagged cell's (weight 0.4 vs 1.0)");
+        }
+
+        beginTest ("Follow accent — final velocity always stays clamped to [0, 1]");
+        {
+            DrumPattern p;
+            p.loadStyle (DrumPattern::Style::Rock);
+            p.setComplexity (1.0f);
+
+            // Near the top of the authored span + maximum positive accent must not exceed 1.0.
+            p.setIntensity (1.0f);
+            p.setFollowAccent (1.0f, 0.4f);
+            expectLessOrEqual (p.stepVelocity (0, 0, 0), 1.0f);
+
+            // Near the bottom of the span + maximum negative accent must not go below 0.0.
+            p.setIntensity (0.0f);
+            p.setFollowAccent (0.0f, 0.4f);
+            expectGreaterOrEqual (p.stepVelocity (0, 0, 0), 0.0f);
+        }
+
         beginTest ("seeded hash — uniform range, reproducible, decorrelated streams");
         {
             bool inRange = true, reproducible = true;
