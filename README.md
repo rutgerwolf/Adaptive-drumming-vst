@@ -361,6 +361,7 @@ Adaptive-drumming-vst\
 | `FABLE_REVIEW.md` | Confirmed findings from that review, mapped to roadmap steps |
 | `ROADMAP_2D.md` | The 19-step implementation plan (steps 1–13 shipped; step 14's Follow-mapping plan is superseded — see below) |
 | `ARCHITECTURE_FOLLOW_V2.md` | Replaces `ARCHITECTURE_2D_FOLLOW.md` §3.4 / `ROADMAP_2D.md` step 14: the shipped Follow design (grid-preserving accent + intensity modulation, steps 20–21) |
+| `BPM_HOST_TEMPO_FEASIBILITY.md` | Research behind the tap-tempo counter: why it sets the plugin's own manual BPM instead of writing the host's tempo (no standard plugin format allows that; REAPER is the sole documented exception) |
 | `ROADMAP.md`, `TODO.md` | Earlier-phase planning notes |
 
 ---
