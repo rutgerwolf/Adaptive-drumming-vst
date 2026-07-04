@@ -173,6 +173,41 @@ public:
             expect (! anyMismatch, "sub-tolerance ppq jitter must not disturb block tiling");
         }
 
+        beginTest ("host-sync — setHostTimeline's beatsPerBar threads into the ppq resync (not hardcoded 4/4)");
+        {
+            // Confirmed gap: setHostTimeline never accepted a beatsPerBar, so
+            // a 3/4 (or any non-4/4) host always resynced as if the bar were
+            // 4 beats long — the downbeat drifts relative to the host's own
+            // bar line. ppq = 3.0 is a full bar boundary in 3/4 (the resync
+            // target should be step 0 of our pattern) but 3/4 of the way
+            // through a 4/4 bar (the old, always-4/4 mapping would target
+            // ~75% into the pattern instead).
+            const double sr  = 44100.0;
+            const double bpm = 120.0;
+
+            DrumPattern refPattern;
+            const int patternLen = refPattern.getLengthInSamples (bpm, sr);
+            expectGreaterThan (patternLen, 0);
+
+            AdaptiveDrummer d;
+            d.prepare (sr, 512);
+            d.setBpm  (bpm);
+
+            juce::AudioBuffer<float> buf (2, 512);
+            buf.clear();
+            d.setHostTimeline (true, true, 3.0, 3.0);   // 3/4, exactly at a bar boundary
+            d.processBlock (buf, 512);
+
+            const int playheadAfter = d.getCurrentPlayheadSample();
+            const int nearZeroBand  = patternLen / 8;
+            const bool nearDownbeat = playheadAfter < nearZeroBand
+                                   || playheadAfter > patternLen - nearZeroBand;
+            expect (nearDownbeat,
+                    "beatsPerBar=3.0 must resync toward the 3/4 downbeat (near 0), not the "
+                    "~75%-into-the-pattern position a hardcoded 4/4 assumption would produce "
+                    "(playhead landed at " + juce::String (playheadAfter) + " / " + juce::String (patternLen) + ")");
+        }
+
         beginTest ("host-sync — playing without a ppq position free-runs instead of resetting");
         {
             // Finding #6: a host that reports isPlaying without a ppq position

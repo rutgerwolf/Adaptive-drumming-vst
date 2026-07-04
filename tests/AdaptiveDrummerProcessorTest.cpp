@@ -22,6 +22,26 @@ public:
     }
 };
 
+/** A host reporting a 3/4 time signature with an advancing ppq position —
+    exercises pos->getTimeSignature() actually being read and threaded through
+    to AdaptiveDrummer (the 4/4-hardcode fix). */
+class TimeSig34PlayHead : public juce::AudioPlayHead
+{
+public:
+    double ppq = 0.0;
+    double bpm = 120.0;
+
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setIsPlaying (true);
+        info.setBpm (bpm);
+        info.setPpqPosition (ppq);
+        info.setTimeSignature (TimeSignature { 3, 4 });
+        return info;
+    }
+};
+
 /**
  * Processor-level tests for AdaptiveDrummerProcessor — a CTest net that sits
  * below pluginval (Roadmap 2D, Step 2).
@@ -570,6 +590,49 @@ public:
             expectGreaterThan (accumulatedMagnitude, 0.0,
                                 "a host reporting isPlaying without ppq must still produce audio, "
                                 "not be silently treated as stopped");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("a 3/4 host time signature is read and threaded through without crashing (4/4-hardcode fix)");
+        {
+            AdaptiveDrummerProcessor proc;
+            TimeSig34PlayHead        fakePlayHead;
+            proc.setPlayHead (&fakePlayHead);
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            proc.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+            proc.prepareToPlay (sampleRate, blockSize);
+
+            const double ppqPerSample = (fakePlayHead.bpm / 60.0) / sampleRate;
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+
+            bool   allFinite            = true;
+            double accumulatedMagnitude = 0.0;
+
+            for (int b = 0; b < 200; ++b)   // several 3-beat bars
+            {
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+                fakePlayHead.ppq += blockSize * ppqPerSample;
+
+                for (int ch = 0; ch < buffer.getNumChannels() && allFinite; ++ch)
+                {
+                    const float* d = buffer.getReadPointer (ch);
+                    for (int i = 0; i < blockSize; ++i)
+                    {
+                        if (! std::isfinite (d[i])) { allFinite = false; break; }
+                        accumulatedMagnitude += (double) std::abs (d[i]);
+                    }
+                }
+            }
+
+            expect (allFinite, "every rendered sample must stay finite with a 3/4 host time signature");
+            expectGreaterThan (accumulatedMagnitude, 0.0, "a 3/4 host session must still produce audio");
 
             proc.releaseResources();
         }

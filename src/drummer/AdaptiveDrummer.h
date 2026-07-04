@@ -78,8 +78,14 @@ public:
         hasPpqPosition are both true, the free-running playhead is corrected
         toward ppqPosition once it drifts past a small tolerance; otherwise
         (no host, or a host that reports playing without a ppq position) the
-        drummer simply free-runs. */
-    void setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition) noexcept;
+        drummer simply free-runs. beatsPerBar is quarter-note-equivalent beats
+        per host bar (e.g. 3.0 for 3/4, 3.0 for 6/8 too — ppq is always in
+        quarter notes regardless of the time signature's denominator); it only
+        affects where in our fixed-length pattern a ppq resync lands, so the
+        pattern's downbeat stays aligned with the host's bar line in any time
+        signature. Defaults to 4/4 so existing callers are unaffected. */
+    void setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition,
+                         double beatsPerBar = 4.0) noexcept;
 
     bool loadSamples    (const juce::File& salamanderRoot, const juce::File& manifestFile = {});
     bool areSamplesLoaded() const noexcept { return drumSampler.areSamplesLoaded(); }
@@ -142,6 +148,7 @@ private:
     bool   hostIsPlaying     { false };
     bool   hostHasPpq        { false };
     double hostPpqPosition   { 0.0 };
+    double hostBeatsPerBar   { 4.0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdaptiveDrummer)
 };
