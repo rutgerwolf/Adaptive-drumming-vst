@@ -131,6 +131,10 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_STANDALONE_APPLICATION=1
+        # Tests only (JUCE modules compile per-target): enables
+        # MessageManager::runDispatchLoopUntil(), which the Step 17 async
+        # kit-loading tests use to pump posted callbacks synchronously.
+        JUCE_MODAL_LOOPS_PERMITTED=1
     )
 
     target_link_libraries(AdaptiveDrummerTests
