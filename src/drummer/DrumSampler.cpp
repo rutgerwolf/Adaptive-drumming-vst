@@ -44,7 +44,9 @@ bool DrumSampler::loadSamples (const juce::File& root, const juce::File& manifes
     if (! root.isDirectory())
     {
         DBG ("DrumSampler: root not found: " + root.getFullPathName());
-        anyVoiceLoaded.store (false, std::memory_order_relaxed);
+        // A failed load must never silently swap out a working kit: leave
+        // sampleSet/anyVoiceLoaded — and whatever kit is already playing —
+        // completely untouched.
         return false;
     }
 
@@ -75,7 +77,14 @@ bool DrumSampler::loadSamples (const juce::File& root, const juce::File& manifes
         }
     }
 
-    const bool loaded = newSet.anyLoaded;
+    if (! newSet.anyLoaded)
+    {
+        DBG ("DrumSampler: no WAV found for any voice under " + root.getFullPathName());
+        // Same rule as the non-directory case above: a scan that found
+        // nothing must not replace a previously-loaded kit with silence, and
+        // must not reset the playback cursors of a kit that is still ringing.
+        return false;
+    }
 
     // Swap the new set in under the lock the audio thread try-locks. The swap is
     // O(1) (AudioBuffer moves), so the audio thread almost never waits. After the
@@ -92,8 +101,8 @@ bool DrumSampler::loadSamples (const juce::File& root, const juce::File& manifes
             }
     }
 
-    anyVoiceLoaded.store (loaded, std::memory_order_relaxed);
-    return loaded;
+    anyVoiceLoaded.store (true, std::memory_order_relaxed);
+    return true;
 }
 
 void DrumSampler::processBlock (juce::AudioBuffer<float>& outBuffer,

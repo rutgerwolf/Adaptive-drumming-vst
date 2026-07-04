@@ -121,6 +121,52 @@ public:
             expectEquals (block.getMagnitude (0, 256), 0.0f);
         }
 
+        beginTest ("failed reload leaves a previously-loaded kit fully intact");
+        {
+            const double sr        = 48000.0;
+            const int    sampleLen = 2000;
+
+            auto kitRoot = makeTempKitWithKick (sampleLen, sr);
+
+            DrumSampler sampler;
+            sampler.prepare (sr);
+            expect (sampler.loadSamples (kitRoot), "good kit should load");
+            expect (sampler.areSamplesLoaded());
+
+            DrumPattern pattern;             // default Rock / Medium
+            auto renderAndGetMagnitude = [&]
+            {
+                juce::AudioBuffer<float> block (2, 256);
+                block.clear();
+                sampler.processBlock (block, 256, sr, pattern, 120.0, 0, 0);
+                return block.getMagnitude (0, 256);
+            };
+
+            expectGreaterThan (renderAndGetMagnitude(), 0.0f, "good kit must be audible");
+
+            // Attempt 1: a nonexistent path. loadSamples() must fail without
+            // disturbing the kit that is already loaded and playing.
+            const auto missing = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                     .getChildFile ("adk_no_such_kit_dir_43");
+            expect (! sampler.loadSamples (missing), "non-existent kit must not load");
+            expect (sampler.areSamplesLoaded(), "old kit must still report as loaded");
+            expectGreaterThan (renderAndGetMagnitude(), 0.0f, "old kit must still be audible");
+
+            // Attempt 2: a real directory that scans clean of any WAV file for
+            // every voice. loadSamples() must fail the same way — no swap, no
+            // touching anyVoiceLoaded — rather than silently swapping in an
+            // empty/silent set.
+            auto emptyDir = juce::File::createTempFile ("adk_empty_kit");
+            emptyDir.deleteFile();
+            emptyDir.createDirectory();
+            expect (! sampler.loadSamples (emptyDir), "empty kit directory must not load");
+            expect (sampler.areSamplesLoaded(), "old kit must still report as loaded");
+            expectGreaterThan (renderAndGetMagnitude(), 0.0f, "old kit must still be audible");
+
+            kitRoot.deleteRecursively();
+            emptyDir.deleteRecursively();
+        }
+
         beginTest ("C1 — concurrent kit reload never races the audio callback");
         {
             const double sr = 48000.0;
