@@ -4,6 +4,11 @@
 // Where the last successfully-loaded sample folder is remembered in plugin state.
 static const juce::Identifier kSamplesPathId { "samplesPath" };
 
+// Where the current groove seed (see AdaptiveDrummer::setSeed) is remembered
+// in plugin state — a plain property, not an APVTS parameter (see the header
+// comment on randomizeGrooveSeed()).
+static const juce::Identifier kGrooveSeedId { "grooveSeed" };
+
 // Looks for the shipped Salamander manifest (see DrumSampler's class comment)
 // next to the plugin binary, then next to the host/standalone executable —
 // the same two-candidate search autoLoadSamples() uses for the kit itself.
@@ -250,6 +255,8 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Sound source: 0 = Synth (no samples needed), 1 = Samples.
     drummer.setUseSynth (static_cast<int> (*apvts.getRawParameterValue ("source")) == 0);
 
+    drummer.setSeed (currentGrooveSeed.load (std::memory_order_relaxed));
+
     // The 2-D groove axes. Complexity is ALWAYS the grid's — Follow never
     // writes it (see DrumPattern's class comment). When Follow is on and a
     // guide is connected, it modulates intensity — a bounded blend toward the
@@ -312,6 +319,10 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
 void AdaptiveDrummerProcessor::getStateInformation (juce::MemoryBlock& data)
 {
+    apvts.state.setProperty (kGrooveSeedId,
+                             static_cast<int> (currentGrooveSeed.load (std::memory_order_relaxed)),
+                             nullptr);
+
     auto state = apvts.copyState();
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, data);
@@ -358,7 +369,24 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
             const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();
             if (remembered.isNotEmpty())
                 enqueueKitLoad ({ juce::File (remembered) });
+
+            // A session saved before the seed feature existed has no
+            // grooveSeed property; keep the built-in default in that case.
+            if (apvts.state.hasProperty (kGrooveSeedId))
+                currentGrooveSeed.store (
+                    static_cast<uint32_t> (static_cast<int> (apvts.state.getProperty (kGrooveSeedId))),
+                    std::memory_order_relaxed);
         }
+}
+
+// ── Groove seed ───────────────────────────────────────────────────────────────
+
+void AdaptiveDrummerProcessor::randomizeGrooveSeed()
+{
+    const auto newSeed = static_cast<uint32_t> (juce::Random::getSystemRandom().nextInt64());
+    currentGrooveSeed.store (newSeed, std::memory_order_relaxed);
+    apvts.state.setProperty (kGrooveSeedId, static_cast<int> (newSeed), nullptr);
+    drummer.setSeed (newSeed);
 }
 
 // ── Samples ───────────────────────────────────────────────────────────────────

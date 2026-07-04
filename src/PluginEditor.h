@@ -42,6 +42,11 @@ private:
     // on the pad instead of hijacking the puck (see XYPad::setFollowOverlay).
     XYPad groovePad;
 
+    // Reshuffles the groove's ornament/humanization seed (a fresh set of fills
+    // and micro-timing variations) without touching style, complexity, or
+    // which cells fire — see AdaptiveDrummerProcessor::randomizeGrooveSeed().
+    juce::TextButton newSeedButton { "New Seed" };
+
     // Follow (guide-driven accent + intensity modulation) + guide-energy meter
     juce::TextButton     followButton { "Follow" };
     juce::Rectangle<int> energyMeterBounds;
