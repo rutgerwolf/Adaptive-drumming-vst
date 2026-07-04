@@ -1,8 +1,90 @@
 #include <JuceHeader.h>
 #include "drummer/AdaptiveDrummer.h"
+#include "drummer/TableExchange.h"
 
 #include <cmath>
+#include <cstring>
 #include <limits>
+
+namespace
+{
+    /** A maximally-distinguishable dynamic GrooveTable for the TableExchange
+        bar-latch tests below: snare fires at full velocity on every one of
+        the 16 steps, deterministically (probability 255, complexityThreshold
+        0 so it fires regardless of the complexity axis). No built-in style
+        authors anything remotely this dense, so its effect on rendered audio
+        is unmistakable. All other voices are left silent (velHigh 0) to keep
+        the signal isolated to the one voice being asserted on. */
+    GrooveTable makeAllStepsSnareTable() noexcept
+    {
+        GrooveTable t {};
+        t.swing     = 0;
+        t.styleSalt = 0x44594E31u;   // 'DYN1' — arbitrary, just needs to differ from the built-ins
+        for (int s = 0; s < GrooveTable::kNumSteps; ++s)
+            t.cells[1 /* Snare */][s] = { 127, 127, 0, 255, 0, StepCell::kFlagAccent };
+        return t;
+    }
+
+    /** FNV-1a over the raw bit patterns of every sample — a cheap, exact
+        (no floating tolerance) fingerprint of a render, used as a fixed
+        golden value so a future change that silently perturbs bit-identical
+        output gets caught, not just a same-process double-render. */
+    uint64_t hashBuffer (const juce::AudioBuffer<float>& buf, int numSamples, uint64_t h = 0xcbf29ce484222325ull)
+    {
+        for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+        {
+            const float* d = buf.getReadPointer (ch);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                uint32_t bits;
+                std::memcpy (&bits, &d[i], sizeof (bits));
+                h ^= bits;
+                h *= 0x100000001b3ull;
+            }
+        }
+        return h;
+    }
+
+    // Writes a mono WAV of `numSamples` containing DC = `dcLevel` and returns
+    // a freshly-created kit root directory <temp>/.../kick/kick.wav, matching
+    // DrumSamplerTest.cpp's makeTempKitWithKick idiom. Used only by the
+    // determinism regression test below: DrumSynth's noise voices draw from
+    // an unseeded juce::Random (a pre-existing property, unrelated to this
+    // PR), so they are not bit-reproducible across instances/runs — a real
+    // bit-identical check needs the sample engine, which has no RNG at all.
+    juce::File makeTempKickKit (double sr)
+    {
+        auto root = juce::File::createTempFile ("adk_tableexchange_kit");
+        root.deleteFile();
+        root.createDirectory();
+
+        auto kickDir = root.getChildFile ("kick");
+        kickDir.createDirectory();
+
+        const int numSamples = (int) (sr * 0.2);   // 200 ms
+
+        juce::WavAudioFormat fmt;
+        auto file = kickDir.getChildFile ("kick.wav");
+        file.deleteFile();
+        if (auto* os = file.createOutputStream().release())
+        {
+            std::unique_ptr<juce::AudioFormatWriter> writer (fmt.createWriterFor (os, sr, 1, 16, {}, 0));
+            if (writer != nullptr)
+            {
+                juce::AudioBuffer<float> buf (1, numSamples);
+                for (int i = 0; i < numSamples; ++i)
+                    buf.setSample (0, i, 1.0f);   // deterministic DC "hit"
+                writer->writeFromAudioSampleBuffer (buf, 0, numSamples);
+            }
+            else
+            {
+                delete os;
+            }
+        }
+
+        return root;
+    }
+}
 
 /**
  * Tests for B3 — mapping the host ppq position to an in-pattern sample offset
@@ -388,6 +470,209 @@ public:
             d.renderTails (buf, blockSize);
             expectEquals (buf.getMagnitude (0, blockSize), 0.0f,
                           "toggling away and back must reset the synth, not resume a frozen tail");
+        }
+
+        beginTest ("TableExchange — a dynamic table publish bar-latches, same as a style switch (roadmap Step 19)");
+        {
+            // getActiveTable() exposes the exact pointer DrumPattern is
+            // currently rendering from — either a built-in style's const
+            // table, or (once adopted) the TableExchange slot itself. Pointer
+            // identity is an exact, single-instance observable, so this test
+            // doesn't need to diff raw audio between two engines (DrumSynth's
+            // cymbal/noise voices draw from an unseeded juce::Random, so two
+            // separate instances are not bit-comparable — a pre-existing
+            // property, unrelated to this PR; see the determinism test below
+            // for how that's worked around when a real audio check is needed).
+            const double sr  = 48000.0;
+            const double bpm = 120.0;             // bar = 96000 samples exactly
+            const int blockSize = 512;
+
+            AdaptiveDrummer d;
+            d.prepare (sr, blockSize);
+            d.setBpm (bpm);
+            d.setHostTimeline (false, false, 0.0);
+            d.setUseSynth (true);
+            d.setStyle (DrumPattern::Style::Rock);
+            d.setDensity (DrumPattern::Density::Full);
+
+            DrumPattern refRock;
+            refRock.loadStyle (DrumPattern::Style::Rock);
+            const GrooveTable* rockTablePtr = &refRock.getActiveTable();
+
+            DrumPattern refPattern;
+            const int patternLen = refPattern.getLengthInSamples (bpm, sr);
+            expectEquals (patternLen, 96000);
+            const int fullBlocksInBar = patternLen / blockSize;   // 187
+
+            juce::AudioBuffer<float> buf (2, blockSize);
+            auto renderBlocks = [&] (int count)
+            {
+                for (int b = 0; b < count; ++b) { buf.clear(); d.processBlock (buf, blockSize); }
+            };
+
+            renderBlocks (10);
+            expect (&d.getActiveTable() == rockTablePtr, "still on the built-in Rock table 10 blocks in");
+
+            GrooveTable dynTable = makeAllStepsSnareTable();
+            GrooveTable* slot = d.getTableExchange().tryStage();
+            expect (slot != nullptr, "tryStage must succeed on a fresh mailbox");
+            *slot = dynTable;
+            d.getTableExchange().publish();
+
+            // Publishing mid-bar must not be observable yet: consume() only
+            // happens at the step-0 bar wrap.
+            renderBlocks (fullBlocksInBar - 10);
+            expectEquals ((int) d.getBarIndex(), 0, "still inside bar 0");
+            expect (&d.getActiveTable() == rockTablePtr,
+                    "a mid-bar publish must not affect the active table before the next bar wrap");
+
+            // This block spans the wrap (95744 -> 96256): the dynamic table
+            // is adopted exactly at the in-block step-0 boundary.
+            renderBlocks (1);
+            expectEquals ((int) d.getBarIndex(), 1, "bar counter advances at the wrap");
+            expect (&d.getActiveTable() == slot,
+                    "the dynamic table must be adopted exactly at the wrap");
+
+            // Sanity: the newly-active table (snare firing at full velocity on
+            // every step) must actually be audible.
+            buf.clear();
+            d.processBlock (buf, blockSize);
+            expectGreaterThan (buf.getMagnitude (0, blockSize), 0.01f,
+                                "the adopted dynamic table must produce audible output");
+        }
+
+        beginTest ("TableExchange — a style flip drops the dynamic table and frees both slots (roadmap Step 19)");
+        {
+            const double sr  = 48000.0;
+            const double bpm = 120.0;
+            const int blockSize = 512;
+
+            AdaptiveDrummer d;
+            d.prepare (sr, blockSize);
+            d.setBpm (bpm);
+            d.setHostTimeline (false, false, 0.0);
+            d.setUseSynth (true);
+            d.setStyle (DrumPattern::Style::Rock);
+            d.setDensity (DrumPattern::Density::Full);
+
+            DrumPattern refPattern;
+            const int patternLen      = refPattern.getLengthInSamples (bpm, sr);
+            const int fullBlocksInBar = patternLen / blockSize;   // 187
+
+            juce::AudioBuffer<float> buf (2, blockSize);
+            auto renderBlocks = [&] (int count)
+            {
+                for (int b = 0; b < count; ++b) { buf.clear(); d.processBlock (buf, blockSize); }
+            };
+
+            // Publish before the very first processBlock(): the playhead
+            // starts at step 0, so (mirroring the existing "a style requested
+            // before playback starts" precedent above) the dynamic table is
+            // adopted immediately on the first call, still within bar 0.
+            GrooveTable dynTable = makeAllStepsSnareTable();
+            GrooveTable* slot = d.getTableExchange().tryStage();
+            *slot = dynTable;
+            d.getTableExchange().publish();
+
+            renderBlocks (1);
+            expectEquals ((int) d.getBarIndex(), 0, "adopting on the very first block does not itself wrap a bar");
+            expect (&d.getActiveTable() == slot, "dynamic table adopted immediately (playhead was already at step 0)");
+
+            // Request a style flip while the dynamic table is active, and let
+            // it ride out the rest of bar 0 (bar-latched, same as any style
+            // switch — the dynamic table must not be dropped until the wrap).
+            d.setStyle (DrumPattern::Style::Jazz);
+            renderBlocks (fullBlocksInBar - 1);   // total so far: fullBlocksInBar blocks = 95744 samples
+            expectEquals ((int) d.getBarIndex(), 0, "still inside bar 0 — the flip must not jump mid-bar");
+            expect (&d.getActiveTable() == slot, "dynamic table must still be active right up to the wrap");
+
+            renderBlocks (1);   // crosses the wrap (95744 -> 96256): the flip (and the drop) happens here
+            expectEquals ((int) d.getBarIndex(), 1, "bar counter advances at the wrap");
+            expect (d.getStyle() == DrumPattern::Style::Jazz,
+                    "the requested style must be live at the wrap, dropping the dynamic table");
+
+            DrumPattern refJazz;
+            refJazz.loadStyle (DrumPattern::Style::Jazz);
+            expect (&d.getActiveTable() == &refJazz.getActiveTable(),
+                    "the active table must now be Jazz's built-in const table, not the dynamic slot");
+
+            // releaseActive() must have fired as part of the flip: both slots
+            // must be independently stageable again, exactly as with a fresh
+            // mailbox (mirrors TableExchangeTest's "both slots held" proof).
+            TableExchange& tx = d.getTableExchange();
+            GrooveTable* q1 = tx.tryStage();
+            expect (q1 != nullptr, "the first slot must be stageable after the style flip released the dynamic table");
+            *q1 = makeAllStepsSnareTable();
+            tx.publish();
+            GrooveTable* q2 = tx.tryStage();
+            expect (q2 != nullptr && q2 != q1,
+                    "the second slot must also be independently stageable — proving releaseActive() fired, "
+                    "not just that the mailbox happens to still hold one free slot");
+        }
+
+        beginTest ("TableExchange — mailbox never touched: 8-bar render is unperturbed (regression guard)");
+        {
+            // The headline safety property of this PR: wiring tableExchange
+            // .consume() into every bar-wrap site must be a complete no-op for
+            // every existing caller, since nothing publishes into it yet.
+            //
+            // This needs the sample engine (DrumSampler), not the synth: the
+            // synth's cymbal/noise voices draw from an unseeded juce::Random
+            // member (a pre-existing property of DrumSynth, unrelated to this
+            // PR), so even two untouched, identically-configured synth
+            // renders are not bit-reproducible — that would falsely look like
+            // a regression here. DrumSampler has no RNG anywhere, so a tiny
+            // deterministic local test kit gives a genuine bit-for-bit check.
+            const double sr  = 44100.0;
+            const double bpm = 120.0;
+            const int blockSize = 512;
+
+            auto kitRoot = makeTempKickKit (sr);
+
+            DrumPattern refPattern;
+            const int patternLen = refPattern.getLengthInSamples (bpm, sr);
+            const juce::int64 totalSamples = (juce::int64) patternLen * 8;   // 8 bars
+
+            auto renderAndHash = [&] () -> uint64_t
+            {
+                AdaptiveDrummer d;
+                d.prepare (sr, blockSize);
+                d.setUseSynth (false);
+                expect (d.loadSamples (kitRoot), "the local deterministic test kit must load");
+                d.setBpm (bpm);
+                d.setStyle (DrumPattern::Style::Rock);
+                d.setDensity (DrumPattern::Density::Full);
+                d.setHostTimeline (false, false, 0.0);
+
+                juce::AudioBuffer<float> buf (2, blockSize);
+                uint64_t h = 0xcbf29ce484222325ull;
+                juce::int64 rendered = 0;
+                while (rendered < totalSamples)
+                {
+                    const int n = (int) juce::jmin ((juce::int64) blockSize, totalSamples - rendered);
+                    buf.setSize (2, n, false, false, true);
+                    buf.clear();
+                    d.processBlock (buf, n);
+                    h = hashBuffer (buf, n, h);
+                    rendered += n;
+                }
+                return h;
+            };
+
+            const uint64_t hashA = renderAndHash();
+            const uint64_t hashB = renderAndHash();
+            expectEquals ((juce::int64) hashA, (juce::int64) hashB,
+                          "two identically-configured drummers (neither ever touching the mailbox) "
+                          "must render bit-for-bit identically over 8 bars");
+
+            // Golden value captured from this exact render immediately after
+            // PR 19a landed (TableExchange wired in, dormant, no producer).
+            constexpr uint64_t kGoldenHash = 0x58ad1625c157ede5ull;
+            expectEquals ((juce::int64) hashA, (juce::int64) kGoldenHash,
+                          "8-bar Rock/Full render must be bit-identical to the pre-recorded golden hash — "
+                          "any difference means the dormant TableExchange wiring perturbed existing behaviour");
+
+            kitRoot.deleteRecursively();
         }
     }
 };

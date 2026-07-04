@@ -95,6 +95,17 @@ public:
     /** Selects a style's const GrooveTable (O(1) pointer re-point, RT-safe). */
     void loadStyle  (Style style);
 
+    /** Re-points the active table at an externally-owned GrooveTable (O(1),
+        RT-safe — same mechanism as loadStyle()) WITHOUT touching
+        currentStyle/getStyle(): a dynamically-published table (see
+        TableExchange.h) is not a style switch, so getStyle() must keep
+        reporting whichever built-in style is nominally selected. The caller
+        (currently only AdaptiveDrummer, adopting a TableExchange slot at a
+        bar wrap) owns the pointed-to table's lifetime; DrumPattern only
+        stores the pointer, exactly as it already does for the const style
+        tables loadStyle() points at. */
+    void loadTable (const GrooveTable* table) noexcept;
+
     /** Legacy 3-step density macro: drives both axes through mapLegacy().
         Kept API-stable for EnergyAnalyzer / processor / editor callers. */
     void setDensity (Density density);

@@ -56,7 +56,18 @@ void AdaptiveDrummer::applyPendingStyle() noexcept
         pendingStyleIdx.load (std::memory_order_acquire));
 
     if (pending != drumPattern.getStyle())
+    {
         drumPattern.loadStyle (pending);   // O(1): re-points a const GrooveTable
+
+        // A style flip must drop any dynamic table rather than leak it as
+        // permanently occupied: releaseActive() hands the TableExchange slot
+        // back to the producer now that drumPattern no longer points at it.
+        if (dynamicTableActive)
+        {
+            tableExchange.releaseActive();
+            dynamicTableActive = false;
+        }
+    }
 }
 
 void AdaptiveDrummer::setBpm (double newBpm)
@@ -190,6 +201,11 @@ void AdaptiveDrummer::processBlock (juce::AudioBuffer<float>& outBuffer, int num
         // No usable timeline (invalid bpm/sample rate): nothing can trigger,
         // but active voices must still decay. Latch any pending style now.
         applyPendingStyle();
+        if (const GrooveTable* t = tableExchange.consume())
+        {
+            drumPattern.loadTable (t);
+            dynamicTableActive = true;
+        }
         renderSegment (outBuffer, 0, numSamples, 0);
         playheadSample = 0.0;
         return;
@@ -205,7 +221,14 @@ void AdaptiveDrummer::processBlock (juce::AudioBuffer<float>& outBuffer, int num
     while (remaining > 0)
     {
         if (pos == 0)
+        {
             applyPendingStyle();
+            if (const GrooveTable* t = tableExchange.consume())
+            {
+                drumPattern.loadTable (t);
+                dynamicTableActive = true;
+            }
+        }
 
         const int segLen = juce::jmin (remaining, patternLen - pos);
         renderSegment (outBuffer, bufOffset, segLen, pos);

@@ -202,6 +202,14 @@ void DrumPattern::loadStyle (Style style)
     activeTable  = kStyleTables[static_cast<int> (style)];   // O(1), RT-safe
 }
 
+void DrumPattern::loadTable (const GrooveTable* table) noexcept
+{
+    // Deliberately does not touch currentStyle: see the header comment — a
+    // dynamically-published table is not a style switch, so getStyle() must
+    // keep reporting whichever built-in style is nominally selected.
+    activeTable = table;
+}
+
 void DrumPattern::mapLegacy (Density density,
                              float& complexity01, float& intensity01) noexcept
 {

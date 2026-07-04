@@ -3,6 +3,7 @@
 #include "DrumPattern.h"
 #include "DrumSampler.h"
 #include "DrumSynth.h"
+#include "TableExchange.h"
 
 #include <atomic>
 
@@ -74,6 +75,15 @@ public:
     void     setSeed (uint32_t newSeed) noexcept { drumPattern.setSeed (newSeed); }
     uint32_t getSeed () const noexcept           { return drumPattern.getSeed(); }
 
+    /** The producer-facing side of the dynamic-table mailbox (TableExchange.h,
+        roadmap Step 19). Message thread / ThreadPool job only — NEVER call
+        from the audio thread. Dormant in this PR: nothing yet publishes into
+        it; it exists so a future producer (e.g. per-voice mute toggles, an
+        editable grid) has somewhere RT-safe to hand a dynamically-built
+        GrooveTable to processBlock(), which adopts it at the next step-0 bar
+        wrap. */
+    TableExchange& getTableExchange() noexcept { return tableExchange; }
+
     /** Choose the sound source: synthesised voices (no samples needed) or the
         WAV sampler. Switching resets the engine being switched *away from*,
         so its voices don't sit frozen mid-decay and resume audibly if the
@@ -120,6 +130,12 @@ public:
     /** Bars rendered since reset (feeds the groove hash). Exposed for tests. */
     uint32_t getBarIndex() const noexcept { return barIndex; }
 
+    /** The table actually driving playback right now (a built-in style table,
+        or an adopted TableExchange slot). Exposed (read-only) for tests to
+        observe bar-latched adoption/release by address; not needed by
+        production callers, which use getStyle() instead. */
+    const GrooveTable& getActiveTable() const noexcept { return drumPattern.getActiveTable(); }
+
     /** Map a host ppq position to a sample offset within a one-bar pattern.
         Exposed (and static) for testing. beatsPerBar matches the pattern length
         (4 quarter-note beats). Result is always in [0, patternLen). */
@@ -135,9 +151,10 @@ private:
     void renderSegment (juce::AudioBuffer<float>& outBuffer,
                         int startSample, int numSamples, int posInPattern);
 
-    DrumPattern drumPattern;
-    DrumSampler drumSampler;
-    DrumSynth   drumSynth;
+    DrumPattern    drumPattern;
+    DrumSampler    drumSampler;
+    DrumSynth      drumSynth;
+    TableExchange  tableExchange;   // dormant in this PR — see getTableExchange()
 
     bool   useSynth          { true };   // default: audible without samples
     double bpm               { 120.0 };
@@ -146,9 +163,16 @@ private:
     int    lastRenderedPlayhead { 0 };   // playhead used for the last-rendered block
 
     // Style requests land here (any thread) and are applied at the step-0 bar
-    // wrap. release/acquire matches the future dynamic-table mailbox idiom;
-    // for the built-in const tables relaxed would already be safe.
+    // wrap. release/acquire matches the dynamic-table mailbox idiom
+    // (TableExchange.h) now wired in alongside it; for the built-in const
+    // tables relaxed would already be safe.
     std::atomic<int> pendingStyleIdx { static_cast<int> (DrumPattern::Style::Rock) };
+
+    // True while drumPattern's active table is a TableExchange slot rather
+    // than a built-in style table. Audio-thread only (set/cleared only from
+    // processBlock()/applyPendingStyle()); plain bool suffices — no other
+    // thread reads it.
+    bool dynamicTableActive { false };
 
     uint32_t barIndex { 0 };             // bars since reset; feeds the groove hash
 
