@@ -200,11 +200,12 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // transport is rolling the ppq position locks the drummer to the DAW timeline.
     // Standalone has no meaningful transport, so we ignore its playhead there and
     // let the Play button drive playback instead.
-    double bpm         = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
-    bool   fromHost    = false;
-    bool   hostPlaying = false;
-    bool   hostHasPpq  = false;
-    double hostPpq     = 0.0;
+    double bpm           = static_cast<double> (*apvts.getRawParameterValue ("bpm"));
+    bool   fromHost      = false;
+    bool   hostPlaying   = false;
+    bool   hostHasPpq    = false;
+    double hostPpq       = 0.0;
+    double hostBeatsPerBar = 4.0;
     if (wrapperType != wrapperType_Standalone)
         if (auto* playHead = getPlayHead())
             if (auto pos = playHead->getPosition())
@@ -223,11 +224,22 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     hostPpq    = *ppq;
                     hostHasPpq = true;
                 }
+                // ppq is always in quarter notes regardless of the time
+                // signature's denominator, so a host bar is
+                // numerator * (4 / denominator) quarter-note beats long (e.g.
+                // 3/4 and 6/8 both give 3.0) — this is what a ppq resync needs
+                // to land on the host's actual bar line instead of always
+                // assuming 4/4 (the pattern's own length stays fixed at 4
+                // beats regardless; only where a resync lands within it
+                // changes).
+                if (auto sig = pos->getTimeSignature())
+                    if (sig->denominator > 0)
+                        hostBeatsPerBar = sig->numerator * (4.0 / sig->denominator);
             }
     currentBpm  = bpm;
     bpmFromHost = fromHost;
     drummer.setBpm (bpm);
-    drummer.setHostTimeline (hostPlaying, hostHasPpq, hostPpq);
+    drummer.setHostTimeline (hostPlaying, hostHasPpq, hostPpq, hostBeatsPerBar);
 
     // Play when the user's Play toggle is on, or the host transport is rolling.
     const bool playing = *apvts.getRawParameterValue ("play") > 0.5f || hostPlaying;

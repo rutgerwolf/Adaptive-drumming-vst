@@ -103,11 +103,13 @@ void AdaptiveDrummer::setFollowAccent (float accent01, float depth01) noexcept
     drumPattern.setFollowAccent (accent01, depth01);
 }
 
-void AdaptiveDrummer::setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition) noexcept
+void AdaptiveDrummer::setHostTimeline (bool isPlaying, bool hasPpqPosition, double ppqPosition,
+                                       double beatsPerBar) noexcept
 {
     hostIsPlaying   = isPlaying;
     hostHasPpq      = hasPpqPosition;
     hostPpqPosition = ppqPosition;
+    hostBeatsPerBar = beatsPerBar > 0.0 ? beatsPerBar : 4.0;
 }
 
 bool AdaptiveDrummer::loadSamples (const juce::File& root, const juce::File& manifestFile)
@@ -166,7 +168,7 @@ void AdaptiveDrummer::processBlock (juce::AudioBuffer<float>& outBuffer, int num
     // not a musical position; see the class comment.)
     if (patternLen > 0 && hostIsPlaying && hostHasPpq)
     {
-        const double target = static_cast<double> (ppqToPlayhead (hostPpqPosition, patternLen));
+        const double target = static_cast<double> (ppqToPlayhead (hostPpqPosition, patternLen, hostBeatsPerBar));
 
         // Shortest signed distance from the free-running playhead to the
         // ppq-derived target, wrapped into the pattern's circular space.
