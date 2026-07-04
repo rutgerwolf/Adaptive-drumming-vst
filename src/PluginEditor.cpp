@@ -15,7 +15,7 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
       groovePad (*p.apvts.getParameter ("complexity"), *p.apvts.getParameter ("intensity"),
                  "COMPLEXITY", "INTENSITY")
 {
-    setSize (420, 618);   // +56px vs. v3: a new Follow Amount row
+    setSize (420, 668);   // +50px vs. v4: a new per-voice MUTES row
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -85,6 +85,25 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
                                                proc.apvts.getParameter ("source")->convertTo0to1 (0.0f)); };
     sourceSamplesButton.onClick = [this] { proc.apvts.getParameter ("source")->setValueNotifyingHost (
                                                proc.apvts.getParameter ("source")->convertTo0to1 (1.0f)); };
+
+    // ── Per-voice mutes (on = muted; see the header comment) ─────────────────
+    {
+        static const char* const kVoiceNames[GrooveTable::kNumVoices]
+            = { "Kick", "Snare", "HiHat", "Crash", "Ride", "Tom" };
+
+        for (int v = 0; v < GrooveTable::kNumVoices; ++v)
+        {
+            auto& btn = muteButtons[v];
+            btn.setButtonText (kVoiceNames[v]);
+            btn.setClickingTogglesState (true);
+            btn.setColour (juce::TextButton::buttonColourId,   kPanel);
+            btn.setColour (juce::TextButton::buttonOnColourId, kActive);
+            btn.setColour (juce::TextButton::textColourOffId,  kMuted);
+            btn.setColour (juce::TextButton::textColourOnId,   kText);
+            btn.onClick = [this, v] { proc.setVoiceMuted (v, muteButtons[v].getToggleState()); };
+            addAndMakeVisible (btn);
+        }
+    }
 
     // ── Transport (Play / Stop) ──────────────────────────────────────────────
     playButton.setClickingTogglesState (true);
@@ -187,6 +206,7 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.drawText ("FOLLOW",  12, 322, 60, 12, juce::Justification::left);
     g.drawText ("ENERGY",  energyMeterBounds.getX(), 322, 80, 12, juce::Justification::left);
     g.drawText ("SOUND",   12, 434, 60, 12, juce::Justification::left);
+    g.drawText ("MUTES",   12, 486, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
@@ -242,22 +262,30 @@ void AdaptiveDrummerEditor::resized()
     sourceSynthButton  .setBounds (m,            448, btnW, btnH);
     sourceSamplesButton.setBounds (m + btnW + m, 448, btnW, btnH);
 
-    // BPM  y=500
-    bpmTitleLabel.setBounds (m,      500, 30, 14);
-    bpmValueLabel.setBounds (m + 30, 496, 80, 28);
+    // Per-voice mute toggles  y=498 (new row; everything below shifts down 50px)
+    {
+        constexpr int gap   = 6;
+        const int     muteW = (W - 2 * m - 5 * gap) / 6;
+        for (int v = 0; v < GrooveTable::kNumVoices; ++v)
+            muteButtons[v].setBounds (m + v * (muteW + gap), 498, muteW, 24);
+    }
+
+    // BPM  y=550
+    bpmTitleLabel.setBounds (m,      550, 30, 14);
+    bpmValueLabel.setBounds (m + 30, 546, 80, 28);
 
     // Tap tempo — in the free space between the BPM display and the volume
     // knob (there's room; no window resize needed).
-    tapTempoButton.setBounds (m + 122, 496, 44, 28);
-    tapResultLabel.setBounds (m + 170, 500, 100, 20);
+    tapTempoButton.setBounds (m + 122, 546, 44, 28);
+    tapResultLabel.setBounds (m + 170, 550, 100, 20);
 
     // Volume  (right side)
-    volumeTitleLabel.setBounds (W - m - 60 - 14, 500, 30, 14);
-    volumeSlider    .setBounds (W - m - 60,       488, 60, 60);
+    volumeTitleLabel.setBounds (W - m - 60 - 14, 550, 30, 14);
+    volumeSlider    .setBounds (W - m - 60,       538, 60, 60);
 
     // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        578, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  580, W - 140, 20);
+    loadSamplesButton  .setBounds (m,        628, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  630, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -294,6 +322,12 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     // connected), show that as an overlay ring instead of moving the puck.
     const bool followOverlay = proc.isGuideAvailable();
     groovePad.setFollowOverlay (followOverlay, proc.getCurrentIntensity(), proc.getGuideAccent());
+
+    // Per-voice mute buttons reflect the processor's mask (covers state
+    // restore and any future non-editor writer, same as the style sync above)
+    const auto mask = proc.getMuteMask();
+    for (int v = 0; v < GrooveTable::kNumVoices; ++v)
+        muteButtons[v].setToggleState ((mask & (1u << v)) != 0, juce::dontSendNotification);
 
     // Sound source buttons
     const bool useSynth = static_cast<int> (*proc.apvts.getRawParameterValue ("source")) == 0;

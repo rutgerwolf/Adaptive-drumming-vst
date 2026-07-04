@@ -95,6 +95,13 @@ public:
     /** Selects a style's const GrooveTable (O(1) pointer re-point, RT-safe). */
     void loadStyle  (Style style);
 
+    /** A style's immutable built-in table, independent of any instance's
+        currently-loaded table. Exposed for dynamic-table producers (the
+        per-voice mute mask in PluginProcessor copies a style's authored
+        groove as its starting point before zeroing muted rows) — the same
+        const data loadStyle() points at, so no new table plumbing. */
+    static const GrooveTable& getStyleTable (Style style) noexcept;
+
     /** Re-points the active table at an externally-owned GrooveTable (O(1),
         RT-safe — same mechanism as loadStyle()) WITHOUT touching
         currentStyle/getStyle(): a dynamically-published table (see

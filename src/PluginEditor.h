@@ -61,6 +61,14 @@ private:
     juce::TextButton sourceSynthButton   { "Synth" };
     juce::TextButton sourceSamplesButton { "Samples" };
 
+    // Per-voice mute toggles (on = muted), one per DrumPattern voice in bit
+    // order: Kick, Snare, HiHat, Crash, Ride, Tom. Clicking calls
+    // AdaptiveDrummerProcessor::setVoiceMuted(), which publishes a muted copy
+    // of the style table through the TableExchange mailbox — the change lands
+    // at the next bar wrap. Toggle state is re-synced from the processor's
+    // mask each timer tick (same pattern as the style/source buttons).
+    juce::TextButton muteButtons[GrooveTable::kNumVoices];
+
     // Transport — drives the standalone; also overrides a stopped host transport
     juce::TextButton playButton { "Play" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> playAttachment;

@@ -9,6 +9,11 @@ static const juce::Identifier kSamplesPathId { "samplesPath" };
 // comment on randomizeGrooveSeed()).
 static const juce::Identifier kGrooveSeedId { "grooveSeed" };
 
+// Where the per-voice mute bitmask (bit 0 Kick … bit 5 Tom; set = muted) is
+// remembered in plugin state — same plain-property pattern as the groove
+// seed. Absent (pre-mute sessions) means 0: nothing muted.
+static const juce::Identifier kMuteMaskId { "muteMask" };
+
 // Looks for the shipped Salamander manifest (see DrumSampler's class comment)
 // next to the plugin binary, then next to the host/standalone executable —
 // the same two-candidate search autoLoadSamples() uses for the kit itself.
@@ -90,10 +95,16 @@ AdaptiveDrummerProcessor::AdaptiveDrummerProcessor()
           .withOutput ("Output",    juce::AudioChannelSet::stereo(), true)
           .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "AdaptiveDrummer", createParameterLayout())
-{}
+{
+    // The mute producer's message-thread poll — see timerCallback() in the
+    // header for why a processor-side timer is the right mechanism.
+    startTimerHz (20);
+}
 
 AdaptiveDrummerProcessor::~AdaptiveDrummerProcessor()
 {
+    stopTimer();
+
     // Join (or cancel, if not yet started) any background kit load before the
     // members it touches — drummer above all — are torn down. A load is
     // bounded work (one directory scan + a handful of WAV reads), so give it
@@ -322,6 +333,9 @@ void AdaptiveDrummerProcessor::getStateInformation (juce::MemoryBlock& data)
     apvts.state.setProperty (kGrooveSeedId,
                              static_cast<int> (currentGrooveSeed.load (std::memory_order_relaxed)),
                              nullptr);
+    apvts.state.setProperty (kMuteMaskId,
+                             static_cast<int> (muteMask.load (std::memory_order_relaxed)),
+                             nullptr);
 
     auto state = apvts.copyState();
     if (auto xml = state.createXml())
@@ -376,6 +390,17 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
                 currentGrooveSeed.store (
                     static_cast<uint32_t> (static_cast<int> (apvts.state.getProperty (kGrooveSeedId))),
                     std::memory_order_relaxed);
+
+            // Per-voice mutes. Unlike the seed, an absent property must
+            // actively reset to 0 (nothing muted): loading a pre-mute session
+            // into an instance that currently has voices muted should clear
+            // them, not keep them. Restored mutes are (re)published here —
+            // this callback runs on the host's message thread (see the kit
+            // note above) — rather than waiting a timer tick.
+            muteMask.store (
+                static_cast<uint8_t> (static_cast<int> (apvts.state.getProperty (kMuteMaskId, 0)) & 0x3F),
+                std::memory_order_relaxed);
+            publishMuteStateIfNeeded();
         }
 }
 
@@ -387,6 +412,102 @@ void AdaptiveDrummerProcessor::randomizeGrooveSeed()
     currentGrooveSeed.store (newSeed, std::memory_order_relaxed);
     apvts.state.setProperty (kGrooveSeedId, static_cast<int> (newSeed), nullptr);
     drummer.setSeed (newSeed);
+}
+
+// ── Per-voice mutes (the first real TableExchange producer) ───────────────────
+
+void AdaptiveDrummerProcessor::setVoiceMuted (int voice, bool shouldMute)
+{
+    if (voice < 0 || voice >= GrooveTable::kNumVoices)
+        return;
+
+    const auto bit = static_cast<uint8_t> (1u << voice);
+    auto mask = muteMask.load (std::memory_order_relaxed);
+    mask = shouldMute ? static_cast<uint8_t> (mask | bit)
+                      : static_cast<uint8_t> (mask & ~bit);
+    muteMask.store (mask, std::memory_order_relaxed);
+
+    apvts.state.setProperty (kMuteMaskId, static_cast<int> (mask), nullptr);
+
+    // Message thread already — publish synchronously rather than waiting up
+    // to one timer tick, so the click lands at the very next bar wrap.
+    publishMuteStateIfNeeded();
+}
+
+void AdaptiveDrummerProcessor::timerCallback()
+{
+    publishMuteStateIfNeeded();
+}
+
+// Why this is safe against the style-flip race (the reasoning a reviewer will
+// ask for):
+//
+// Style switches are bar-latched: processBlock() records the "style" parameter
+// into the drummer every block, but the actual flip happens inside
+// AdaptiveDrummer::processBlock() at the next step-0 bar wrap — and at that
+// exact moment applyPendingStyle() drops any adopted dynamic table
+// (tableExchange.releaseActive()), falling back to the new style's *unmuted*
+// built-in table. So on a style change this producer must get a freshly-muted
+// copy of the NEW style's table into the mailbox before (or by) that wrap.
+//
+// Two properties make that work:
+//
+//   1. This routine keys off the "style" PARAMETER (the target style, visible
+//      the instant it changes — from the editor or host automation alike),
+//      never drummer.getStyle() (bar-latched: it only reports the change
+//      after the very wrap we need to beat). The 20 Hz poll therefore reacts
+//      within ≤50 ms of any style change, while the flip it must beat is at
+//      least one bar away — ≥1 s at the 240 BPM clamp in setBpm(). (Editor
+//      mute clicks don't even wait for the poll: setVoiceMuted() calls this
+//      synchronously.)
+//   2. The consumer's wrap sequence is applyPendingStyle() *then* consume()
+//      (see AdaptiveDrummer::processBlock). So even when the muted table for
+//      the new style is published before the flip's own wrap, the same wrap
+//      that loads the new built-in table and releases the old dynamic slot
+//      immediately adopts the waiting muted copy — the documented same-wrap
+//      tie-break ("the dynamic table wins because consume() runs after
+//      applyPendingStyle()"). No unmuted bar, no audible gap.
+//
+// Residual, accepted transient: if the parameter changes again while both
+// mailbox slots are held (one active + one pending), tryStage() returns
+// nullptr and this update coalesces into a later tick — per the mailbox
+// contract that state resolves within one bar (every wrap consume()s), so the
+// stale table can play for at most one bar before the retry lands. Last-
+// writer-wins publishing means only the newest (style, mask) ever matters.
+void AdaptiveDrummerProcessor::publishMuteStateIfNeeded()
+{
+    // Message thread only — this is TableExchange's single producer.
+    const auto mask     = muteMask.load (std::memory_order_relaxed);
+    const int  styleIdx = static_cast<int> (*apvts.getRawParameterValue ("style"));
+
+    // Idempotence: nothing to do unless the mask changed, or the target style
+    // changed while anything is muted. (A style change with mask == 0 needs
+    // no publish: the flip itself restores the new style's built-in table,
+    // and until that wrap the previously-published clean copy is
+    // byte-identical to the old style's built-in anyway.)
+    if (mask == lastPublishedMuteMask
+        && (mask == 0 || styleIdx == lastPublishedMuteStyle))
+        return;
+
+    auto& exchange = drummer.getTableExchange();
+    GrooveTable* slot = exchange.tryStage();
+    if (slot == nullptr)
+        return;   // both slots held — resolves within one bar; the next timer tick retries
+
+    // Muted copy of the target style's built-in table: zero the whole StepCell
+    // for every step of a muted voice's row. velHigh == 0 is the model's
+    // authored "this cell never plays" convention — stepFires() rejects such a
+    // cell before any threshold/probability logic runs (see DrumPattern.cpp),
+    // so this guarantees silence at every complexity/intensity/seed.
+    *slot = DrumPattern::getStyleTable (static_cast<DrumPattern::Style> (styleIdx));
+    for (int v = 0; v < GrooveTable::kNumVoices; ++v)
+        if ((mask & (1u << v)) != 0)
+            for (int s = 0; s < GrooveTable::kNumSteps; ++s)
+                slot->cells[v][s] = StepCell {};
+
+    exchange.publish();
+    lastPublishedMuteMask  = mask;
+    lastPublishedMuteStyle = styleIdx;
 }
 
 // ── Samples ───────────────────────────────────────────────────────────────────
