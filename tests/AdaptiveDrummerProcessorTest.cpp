@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 
 #include <cmath>
+#include <cstring>
 
 /**
  * A host playhead that reports isPlaying=true but never supplies a ppq
@@ -734,6 +735,159 @@ public:
                                        (double) expectedIntensity, 0.001,
                                        "intensity must be derived from the restored legacy density, "
                                        "not left at the plain default");
+        }
+
+        // ── Per-voice mutes: the first real TableExchange producer ────────────
+
+        beginTest ("muting a voice publishes a muted copy of the style table, adopted at the bar wrap");
+        {
+            AdaptiveDrummerProcessor proc;
+            proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+            proc.prepareToPlay (44100.0, 512);
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+
+            proc.setVoiceMuted (0, true);   // Kick — publishes synchronously
+
+            juce::AudioBuffer<float> buffer (2, 512);
+            juce::MidiBuffer midi;
+            buffer.clear();
+            proc.processBlock (buffer, midi);   // playhead at step 0 → the muted table is adopted now
+
+            const GrooveTable& active = proc.getActiveGrooveTable();
+            const GrooveTable& rock   = DrumPattern::getStyleTable (DrumPattern::Style::Rock);
+            expect (&active != &rock, "a dynamic table must have been adopted, not the built-in Rock table");
+            expectEquals ((int) active.swing,     (int) rock.swing,     "swing must be copied from the built-in table");
+            expectEquals ((int) active.styleSalt, (int) rock.styleSalt, "styleSalt must be copied from the built-in table");
+
+            bool kickSilenced = true;
+            for (int s = 0; s < GrooveTable::kNumSteps; ++s)
+                if (active.cells[0][s].velHigh != 0)
+                    kickSilenced = false;
+            expect (kickSilenced, "every kick cell must have velHigh == 0 (the model's never-plays convention)");
+
+            bool othersIntact = true;
+            for (int v = 1; v < GrooveTable::kNumVoices; ++v)
+                if (std::memcmp (active.cells[v], rock.cells[v], sizeof (rock.cells[v])) != 0)
+                    othersIntact = false;
+            expect (othersIntact, "unmuted voices' rows must be byte-identical to the built-in table");
+
+            // Prove "never plays" through the real firing gate, not just the
+            // velHigh convention: even at full complexity, over several bars,
+            // a muted kick never fires while the snare backbeat is untouched.
+            DrumPattern p;
+            p.loadTable (&active);
+            p.setComplexity (1.0f);
+            bool kickEverFires = false, snareBackboneFires = true;
+            for (uint32_t bar = 0; bar < 4; ++bar)
+            {
+                for (int s = 0; s < DrumPattern::kSteps; ++s)
+                    if (p.stepFires (0, s, bar))
+                        kickEverFires = true;
+                if (! p.stepFires (1, 4, bar) || ! p.stepFires (1, 12, bar))
+                    snareBackboneFires = false;
+            }
+            expect (! kickEverFires,     "a muted kick must never fire at any step/bar, even at full complexity");
+            expect (snareBackboneFires,  "the snare backbeat must be unaffected by the kick mute");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("a style flip and the muted table land at the same bar wrap — no unmuted bar");
+        {
+            AdaptiveDrummerProcessor proc;
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+            proc.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+
+            proc.setVoiceMuted (0, true);   // Kick
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            buffer.clear();
+            proc.processBlock (buffer, midi);   // adopt the muted Rock copy at step 0
+
+            const GrooveTable& rock = DrumPattern::getStyleTable (DrumPattern::Style::Rock);
+            const GrooveTable& jazz = DrumPattern::getStyleTable (DrumPattern::Style::Jazz);
+            expectEquals ((int) proc.getActiveGrooveTable().styleSalt, (int) rock.styleSalt,
+                          "premise: the muted Rock copy must be active");
+
+            // Style → Jazz (editor click or host automation), and the mute
+            // producer reacts within one 20 Hz tick — simulated by the direct
+            // call, i.e. well before the flip's own bar wrap (>= 1 s away at
+            // any legal tempo). The wrap then runs applyPendingStyle() first
+            // and consume() second, so the muted Jazz copy wins the same wrap.
+            auto* styleParam = proc.apvts.getParameter ("style");
+            styleParam->setValueNotifyingHost (styleParam->convertTo0to1 (1.0f));
+            proc.publishMuteStateIfNeeded();
+
+            // One bar at the default 120 BPM / 44.1 kHz = 88200 samples.
+            // Render to just short of the wrap: the muted Rock copy must hold.
+            const int patternLen = 88200;
+            int rendered = blockSize;
+            while (rendered + blockSize < patternLen)
+            {
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+                rendered += blockSize;
+            }
+            expectEquals ((int) proc.getActiveGrooveTable().styleSalt, (int) rock.styleSalt,
+                          "right up to the wrap, the muted Rock copy must still be active");
+
+            // Cross the wrap.
+            buffer.clear();
+            proc.processBlock (buffer, midi);
+
+            const GrooveTable& afterWrap = proc.getActiveGrooveTable();
+            expect (&afterWrap != &jazz,
+                    "the unmuted built-in Jazz table must NOT be what plays after the flip");
+            expectEquals ((int) afterWrap.styleSalt, (int) jazz.styleSalt,
+                          "the adopted table must be a Jazz copy — style flip and mute in the same wrap");
+
+            bool kickSilenced = true;
+            for (int s = 0; s < GrooveTable::kNumSteps; ++s)
+                if (afterWrap.cells[0][s].velHigh != 0)
+                    kickSilenced = false;
+            expect (kickSilenced, "the kick mute must survive the style flip with no unmuted bar");
+
+            expect (std::memcmp (afterWrap.cells[4], jazz.cells[4], sizeof (jazz.cells[4])) == 0,
+                    "the Jazz ride row must be byte-identical to the built-in Jazz table");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("mute mask survives a state round-trip and defaults to 0 for a pre-mute session");
+        {
+            AdaptiveDrummerProcessor proc;
+            proc.setVoiceMuted (1, true);   // Snare
+            proc.setVoiceMuted (5, true);   // Tom
+            expectEquals ((int) proc.getMuteMask(), 0x22, "premise: snare + tom bits set");
+
+            juce::MemoryBlock savedState;
+            proc.getStateInformation (savedState);
+
+            AdaptiveDrummerProcessor fresh;
+            fresh.setStateInformation (savedState.getData(), (int) savedState.getSize());
+            expectEquals ((int) fresh.getMuteMask(), 0x22, "the mask must survive the round-trip");
+            expect (fresh.isVoiceMuted (1) && fresh.isVoiceMuted (5) && ! fresh.isVoiceMuted (0),
+                    "per-voice queries must agree with the restored mask");
+
+            // A session saved before the mute feature existed: same state with
+            // the property stripped (it lives as an attribute on the root
+            // element, like grooveSeed). Loading it into an instance that
+            // currently HAS mutes must actively clear them, not keep them.
+            auto xml = juce::AudioProcessor::getXmlFromBinary (savedState.getData(), (int) savedState.getSize());
+            expect (xml != nullptr, "saved state must parse as XML");
+            xml->removeAttribute ("muteMask");
+            juce::MemoryBlock preMuteState;
+            juce::AudioProcessor::copyXmlToBinary (*xml, preMuteState);
+
+            AdaptiveDrummerProcessor dirty;
+            dirty.setVoiceMuted (2, true);   // a live mute the load must clear
+            dirty.setStateInformation (preMuteState.getData(), (int) preMuteState.getSize());
+            expectEquals ((int) dirty.getMuteMask(), 0,
+                          "a session without the property must reset the mask to 0 (nothing muted)");
         }
 
         // ── Step 17: async kit loading ────────────────────────────────────────

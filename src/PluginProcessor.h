@@ -33,7 +33,8 @@
  *   volume      float  0-1     default 0.8
  *   follow      bool           default off   guide-driven accent + intensity modulation on top of the grid
  */
-class AdaptiveDrummerProcessor : public juce::AudioProcessor
+class AdaptiveDrummerProcessor : public juce::AudioProcessor,
+                                 private juce::Timer
 {
 public:
     AdaptiveDrummerProcessor();
@@ -79,6 +80,37 @@ public:
     void     randomizeGrooveSeed();
     uint32_t getCurrentGrooveSeed() const noexcept { return currentGrooveSeed.load (std::memory_order_relaxed); }
 
+    // ── Per-voice mutes (the first real TableExchange producer) ───────────────
+    /** Mutes/unmutes one drum voice (DrumPattern voice index: 0 Kick, 1 Snare,
+        2 HiHat, 3 Crash, 4 Ride, 5 Tom). Message thread only (persists into
+        apvts.state, like randomizeGrooveSeed) — the editor's mute buttons are
+        the caller. Publishes the rebuilt table synchronously via
+        publishMuteStateIfNeeded(), so a click takes effect at the very next
+        bar wrap. */
+    void setVoiceMuted (int voice, bool shouldMute);
+    bool isVoiceMuted  (int voice) const noexcept
+    {
+        return (muteMask.load (std::memory_order_relaxed) & (1u << voice)) != 0;
+    }
+    uint8_t getMuteMask () const noexcept { return muteMask.load (std::memory_order_relaxed); }
+
+    /** The mute producer routine (message thread ONLY — this is TableExchange's
+        producer side): if the mute mask or the target style changed since the
+        last publish, rebuilds a muted copy of the target style's built-in
+        table and publishes it into the drummer's TableExchange. Idempotent —
+        a no-change call returns immediately. Called synchronously by
+        setVoiceMuted() and from the processor's 20 Hz message-thread timer
+        (see timerCallback() for why a timer, and why it polls the "style"
+        *parameter* rather than the drummer's bar-latched style). Public so
+        tests can drive it deterministically without pumping the timer. */
+    void publishMuteStateIfNeeded();
+
+    /** The table actually driving the drummer right now (mirrors
+        AdaptiveDrummer::getActiveTable()). Introspection for tests — pointer
+        identity distinguishes a built-in style table from an adopted
+        TableExchange slot. */
+    const GrooveTable& getActiveGrooveTable () const noexcept { return drummer.getActiveTable(); }
+
     /** True while a background kit-load job is queued or running (Step 17).
         Introspection for tests; not needed by production callers. */
     bool isKitLoadInFlight () const noexcept { return kitLoadInFlight.load(); }
@@ -121,6 +153,20 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
+    /** The message-thread poll driving publishMuteStateIfNeeded() (20 Hz).
+        Why a processor-side timer, and why it exists at all — the style-flip
+        race (see publishMuteStateIfNeeded()'s implementation comment): a
+        style change must cause a freshly-muted copy of the *new* style's
+        table to reach the mailbox before that flip's own bar wrap. The
+        editor's 10 Hz poll can't be the mechanism (the editor may be closed
+        during host automation), and an APVTS parameterChanged listener can't
+        publish directly (host automation may deliver it on the audio thread,
+        where the producer side of TableExchange must never run — and
+        triggerAsyncUpdate() posts a system message, which can block there
+        too). So the processor polls: 20 Hz ⇒ ≤50 ms reaction, comfortably
+        inside the shortest possible bar (1 s at the 240 BPM clamp). */
+    void timerCallback() override;
+
     /** Decides whether an automatic kit load is due and, if so, dispatches it
         to the background pool (Step 17) — never loads inline. forceReload
         bypasses both the areSamplesLoaded() early-out and the triedAutoLoad
@@ -157,6 +203,22 @@ private:
     // kSamplesPathId) so getStateInformation()/setStateInformation() carry it
     // across sessions for free (apvts.copyState()/replaceState() include it).
     std::atomic<uint32_t> currentGrooveSeed { DrumPattern::kDefaultGrooveSeed };
+
+    // ── Per-voice mutes ────────────────────────────────────────────────────────
+    // One bit per DrumPattern voice (bit 0 Kick … bit 5 Tom); set = muted.
+    // Written from the message thread (setVoiceMuted / setStateInformation),
+    // read anywhere. Persisted as a plain state-tree int property
+    // (kMuteMaskId), like the groove seed — not an AudioParameter: a mixing
+    // switch, not something a host should ramp/automate per-sample.
+    std::atomic<uint8_t> muteMask { 0 };
+
+    // What publishMuteStateIfNeeded() last published — message thread only.
+    // Makes the 20 Hz poll idempotent (no mailbox spam when nothing changed)
+    // and doubles as the retry latch: a tryStage() nullptr leaves these stale,
+    // so the next tick simply tries again (the mailbox contract: coalesce and
+    // retry, never spin).
+    uint8_t lastPublishedMuteMask  { 0 };
+    int     lastPublishedMuteStyle { -1 };
 
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
 

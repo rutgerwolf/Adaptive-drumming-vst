@@ -202,6 +202,11 @@ void DrumPattern::loadStyle (Style style)
     activeTable  = kStyleTables[static_cast<int> (style)];   // O(1), RT-safe
 }
 
+const GrooveTable& DrumPattern::getStyleTable (Style style) noexcept
+{
+    return *kStyleTables[static_cast<int> (style)];
+}
+
 void DrumPattern::loadTable (const GrooveTable* table) noexcept
 {
     // Deliberately does not touch currentStyle: see the header comment — a
