@@ -115,6 +115,7 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         tests/AdaptiveDrummerTest.cpp
         tests/DrumSynthTest.cpp
         tests/AdaptiveDrummerProcessorTest.cpp
+        tests/TapTempoTest.cpp
         src/drummer/DrumPattern.cpp
         src/drummer/DrumSampler.cpp
         src/drummer/DrumSynth.cpp

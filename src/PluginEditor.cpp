@@ -113,6 +113,18 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     };
     addAndMakeVisible (bpmValueLabel);
 
+    // ── Tap tempo (a calculator, not a host-tempo override — see the header
+    // comment) ────────────────────────────────────────────────────────────────
+    tapTempoButton.setColour (juce::TextButton::buttonColourId,  kPanel);
+    tapTempoButton.setColour (juce::TextButton::textColourOffId, kAccent);
+    tapTempoButton.onClick = [this] { handleTapTempo(); };
+    addAndMakeVisible (tapTempoButton);
+
+    tapResultLabel.setColour (juce::Label::textColourId, kMuted);
+    tapResultLabel.setFont (juce::Font (12.0f));
+    tapResultLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (tapResultLabel);
+
     // ── Volume ──────────────────────────────────────────────────────────────────
     volumeTitleLabel.setText ("Vol", juce::dontSendNotification);
     volumeTitleLabel.setColour (juce::Label::textColourId, kMuted);
@@ -225,6 +237,11 @@ void AdaptiveDrummerEditor::resized()
     bpmTitleLabel.setBounds (m,      500, 30, 14);
     bpmValueLabel.setBounds (m + 30, 496, 80, 28);
 
+    // Tap tempo — in the free space between the BPM display and the volume
+    // knob (there's room; no window resize needed).
+    tapTempoButton.setBounds (m + 122, 496, 44, 28);
+    tapResultLabel.setBounds (m + 170, 500, 100, 20);
+
     // Volume  (right side)
     volumeTitleLabel.setBounds (W - m - 60 - 14, 500, 30, 14);
     volumeSlider    .setBounds (W - m - 60,       488, 60, 60);
@@ -288,6 +305,44 @@ void AdaptiveDrummerEditor::updateFromProcessor()
                                     juce::dontSendNotification);
         samplesStatusLabel.setColour (juce::Label::textColourId,
                                       loaded ? kText : juce::Colours::orange);
+    }
+}
+
+// ── Tap tempo ─────────────────────────────────────────────────────────────────
+
+void AdaptiveDrummerEditor::handleTapTempo()
+{
+    constexpr double kTapTimeoutMs   = 2000.0;   // silence this long ⇒ start a fresh tap sequence
+    constexpr int    kMaxTapHistory  = 8;        // average over at most this many taps
+
+    const double now = juce::Time::getMillisecondCounterHiRes();
+
+    if (! tapTimestampsMs.isEmpty() && (now - tapTimestampsMs.getLast()) > kTapTimeoutMs)
+        tapTimestampsMs.clear();
+
+    tapTimestampsMs.add (now);
+    if (tapTimestampsMs.size() > kMaxTapHistory)
+        tapTimestampsMs.remove (0);
+
+    const double tappedBpm = TapTempo::computeBpm (tapTimestampsMs);
+    if (tappedBpm <= 0.0)
+    {
+        tapResultLabel.setText ("tap again...", juce::dontSendNotification);
+        return;
+    }
+
+    // Sets our own manual "bpm" parameter — exactly what typing a value into
+    // bpmValueLabel does. This only affects playback while the host isn't
+    // already supplying a tempo (see updateFromProcessor()); no standard VST3/
+    // AU/AAX interface lets an effect plugin write the *host's* tempo, so when
+    // the host is driving, this is a read-off number for the user to type into
+    // the DAW's own tempo field by hand.
+    if (auto* p = proc.apvts.getParameter ("bpm"))
+    {
+        const auto& range = p->getNormalisableRange();
+        const float v     = range.snapToLegalValue ((float) tappedBpm);
+        p->setValueNotifyingHost (range.convertTo0to1 (v));
+        tapResultLabel.setText ("-> " + juce::String (v, 1), juce::dontSendNotification);
     }
 }
 

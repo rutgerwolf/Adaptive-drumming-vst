@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "XYPad.h"
+#include "TapTempo.h"
 
 /**
  * AdaptiveDrummerEditor
@@ -62,6 +63,18 @@ private:
     // BPM
     juce::Label bpmTitleLabel;
     juce::Label bpmValueLabel;
+
+    // Tap tempo — a calculator, not a host-tempo override: tapping sets our
+    // own "bpm" parameter (exactly like typing a value into bpmValueLabel
+    // does), which only drives playback when the host isn't already supplying
+    // a tempo. tapResultLabel shows the just-tapped value even when
+    // bpmValueLabel is locked to a host-driven tempo, so the user always has
+    // a number to read off and enter into the DAW's own tempo field by hand —
+    // no plugin format gives an effect a way to write the host's tempo itself.
+    juce::TextButton tapTempoButton { "TAP" };
+    juce::Label      tapResultLabel;
+    juce::Array<double> tapTimestampsMs;
+    void handleTapTempo();
 
     // Volume
     juce::Slider volumeSlider;
