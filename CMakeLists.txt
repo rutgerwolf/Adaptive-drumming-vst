@@ -32,6 +32,7 @@ target_sources(AdaptiveDrummer PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/XYPad.cpp
+    src/GrooveGrid.cpp
     src/drummer/DrumPattern.cpp
     src/drummer/DrumSampler.cpp
     src/drummer/DrumSynth.cpp
@@ -125,6 +126,7 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         src/PluginProcessor.cpp
         src/PluginEditor.cpp
         src/XYPad.cpp
+        src/GrooveGrid.cpp
     )
 
     target_include_directories(AdaptiveDrummerTests PRIVATE src)

@@ -1,6 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <cstring>
+#include <type_traits>
+
 // Where the last successfully-loaded sample folder is remembered in plugin state.
 static const juce::Identifier kSamplesPathId { "samplesPath" };
 
@@ -13,6 +16,27 @@ static const juce::Identifier kGrooveSeedId { "grooveSeed" };
 // remembered in plugin state — same plain-property pattern as the groove
 // seed. Absent (pre-mute sessions) means 0: nothing muted.
 static const juce::Identifier kMuteMaskId { "muteMask" };
+
+// Where the user-drawn custom grid is remembered in plugin state: the raw
+// GrooveTable bytes, base64-encoded (juce::Base64) into a plain string
+// property, guarded by an explicit format-version int so a future layout
+// change can detect and reject/migrate old blobs instead of misinterpreting
+// bytes. Absence of gridData (or a gridVersion mismatch, or a blob of the
+// wrong size) means "no custom grid" — normal for pre-grid or foreign
+// sessions, handled silently. The blob is raw little-endian struct bytes
+// (including padding); all supported targets are little-endian, and the
+// version property is the escape hatch if that ever changes.
+static const juce::Identifier kGridDataId    { "gridData" };
+static const juce::Identifier kGridVersionId { "gridVersion" };
+static constexpr int kGridFormatVersion = 1;
+
+// The raw-bytes serialization above is only sound while GrooveTable stays a
+// tightly-packed trivially-copyable POD of the exact size version 1 was
+// authored against. Any change here is a gridVersion bump, not a silent edit.
+static_assert (std::is_trivially_copyable<GrooveTable>::value,
+               "gridData persists GrooveTable as raw bytes");
+static_assert (sizeof (GrooveTable) == 584,
+               "GrooveTable layout changed — bump kGridFormatVersion and migrate gridData");
 
 // Looks for the shipped Salamander manifest (see DrumSampler's class comment)
 // next to the plugin binary, then next to the host/standalone executable —
@@ -96,8 +120,13 @@ AdaptiveDrummerProcessor::AdaptiveDrummerProcessor()
           .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "AdaptiveDrummer", createParameterLayout())
 {
-    // The mute producer's message-thread poll — see timerCallback() in the
-    // header for why a processor-side timer is the right mechanism.
+    // Baseline for the producer poll's style-change edge detector (decision:
+    // a style pick exits custom-grid mode) — must start at the parameter's
+    // actual value so the first poll can't see a phantom "change".
+    lastSeenStyleIdx = static_cast<int> (*apvts.getRawParameterValue ("style"));
+
+    // The dynamic-table producer's message-thread poll — see timerCallback()
+    // in the header for why a processor-side timer is the right mechanism.
     startTimerHz (20);
 }
 
@@ -336,6 +365,7 @@ void AdaptiveDrummerProcessor::getStateInformation (juce::MemoryBlock& data)
     apvts.state.setProperty (kMuteMaskId,
                              static_cast<int> (muteMask.load (std::memory_order_relaxed)),
                              nullptr);
+    persistGridToState();   // kept current on every edit too — this is belt-and-braces
 
     auto state = apvts.copyState();
     if (auto xml = state.createXml())
@@ -394,13 +424,41 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
             // Per-voice mutes. Unlike the seed, an absent property must
             // actively reset to 0 (nothing muted): loading a pre-mute session
             // into an instance that currently has voices muted should clear
-            // them, not keep them. Restored mutes are (re)published here —
+            // them, not keep them. Restored mutes are (re)published below —
             // this callback runs on the host's message thread (see the kit
             // note above) — rather than waiting a timer tick.
             muteMask.store (
                 static_cast<uint8_t> (static_cast<int> (apvts.state.getProperty (kMuteMaskId, 0)) & 0x3F),
                 std::memory_order_relaxed);
-            publishMuteStateIfNeeded();
+
+            // The restored session's style is the new edge-detect baseline —
+            // a loaded style must never read as "the user picked a style"
+            // (which would wrongly discard the custom grid restored below).
+            lastSeenStyleIdx = static_cast<int> (*apvts.getRawParameterValue ("style"));
+
+            // Custom grid. Like the mute mask, absence actively resets (a
+            // pre-grid session loaded into an instance with a drawing must
+            // clear it). A valid restored grid is treated exactly like a
+            // freshly-drawn one: fed through the same producer below, so
+            // mutes still compose correctly on top.
+            customGridActive = false;
+            if (static_cast<int> (apvts.state.getProperty (kGridVersionId, 0)) == kGridFormatVersion)
+            {
+                juce::MemoryOutputStream decoded;
+                if (juce::Base64::convertFromBase64 (decoded,
+                        apvts.state.getProperty (kGridDataId).toString())
+                    && decoded.getDataSize() == sizeof (GrooveTable))
+                {
+                    std::memcpy (&customGrid, decoded.getData(), sizeof (GrooveTable));
+                    customGridActive = true;
+                }
+            }
+            // Bump unconditionally: "custom grid A" → "custom grid B" leaves
+            // every other publish input identical, and the revision is what
+            // makes the producer see that as a change.
+            ++gridRevision;
+
+            publishDynamicTableIfNeeded();
         }
 }
 
@@ -414,7 +472,7 @@ void AdaptiveDrummerProcessor::randomizeGrooveSeed()
     drummer.setSeed (newSeed);
 }
 
-// ── Per-voice mutes (the first real TableExchange producer) ───────────────────
+// ── Per-voice mutes ───────────────────────────────────────────────────────────
 
 void AdaptiveDrummerProcessor::setVoiceMuted (int voice, bool shouldMute)
 {
@@ -431,12 +489,95 @@ void AdaptiveDrummerProcessor::setVoiceMuted (int voice, bool shouldMute)
 
     // Message thread already — publish synchronously rather than waiting up
     // to one timer tick, so the click lands at the very next bar wrap.
-    publishMuteStateIfNeeded();
+    publishDynamicTableIfNeeded();
+}
+
+// ── User-drawable groove grid ─────────────────────────────────────────────────
+
+const GrooveTable& AdaptiveDrummerProcessor::getGridTable() const noexcept
+{
+    if (customGridActive)
+        return customGrid;
+
+    // The TARGET style (the raw parameter), not drummer.getStyle(): the grid
+    // must show the style the user just picked, not wait out the bar latch.
+    return DrumPattern::getStyleTable (static_cast<DrumPattern::Style> (
+        static_cast<int> (*apvts.getRawParameterValue ("style"))));
+}
+
+void AdaptiveDrummerProcessor::setGridCell (int voice, int step, bool on, int velocity127)
+{
+    if (voice < 0 || voice >= GrooveTable::kNumVoices
+        || step < 0 || step  >= GrooveTable::kNumSteps)
+        return;
+
+    if (! customGridActive)
+    {
+        // First edit enters custom mode: start from the target style's
+        // built-in table (with mutes composing on top at publish time, this
+        // is exactly what was audible the instant before the edit). swing and
+        // styleSalt come along with the copy, so drawing on Jazz keeps its
+        // swing and its remaining probabilistic cells keep their per-bar
+        // variation.
+        customGrid       = getGridTable();
+        customGridActive = true;
+    }
+
+    if (on)
+    {
+        // Hand-drawn hit: always fires (probability 255, threshold 0 — the
+        // "deterministic backbone" convention), at exactly the drawn velocity
+        // (velLow == velHigh: no intensity-axis re-voicing; velRandRange 0:
+        // no humanization jitter on a hand-placed hit), no accent/ghost flags.
+        const auto vel = static_cast<uint8_t> (juce::jlimit (1, 127, velocity127));
+        customGrid.cells[voice][step] = StepCell { vel, vel, 0, 255, 0, 0 };
+    }
+    else
+    {
+        // Off = never plays: velHigh == 0 via full zeroing, the exact
+        // convention the mute producer already uses.
+        customGrid.cells[voice][step] = StepCell {};
+    }
+
+    ++gridRevision;
+    persistGridToState();
+    publishDynamicTableIfNeeded();   // message thread — lands at the next bar wrap
+}
+
+void AdaptiveDrummerProcessor::clearCustomGrid()
+{
+    if (! customGridActive)
+        return;
+
+    customGridActive = false;
+    persistGridToState();
+
+    // Must publish (not just flip the flag): the drummer may be playing an
+    // adopted custom-grid slot, and only a fresh publish of plain
+    // style + mutes can supersede it — releaseActive() is consumer-side and
+    // unreachable from here.
+    publishDynamicTableIfNeeded();
+}
+
+void AdaptiveDrummerProcessor::persistGridToState()
+{
+    if (customGridActive)
+    {
+        apvts.state.setProperty (kGridVersionId, kGridFormatVersion, nullptr);
+        apvts.state.setProperty (kGridDataId,
+                                 juce::Base64::toBase64 (&customGrid, sizeof (GrooveTable)),
+                                 nullptr);
+    }
+    else
+    {
+        apvts.state.removeProperty (kGridDataId,    nullptr);
+        apvts.state.removeProperty (kGridVersionId, nullptr);
+    }
 }
 
 void AdaptiveDrummerProcessor::timerCallback()
 {
-    publishMuteStateIfNeeded();
+    publishDynamicTableIfNeeded();
 }
 
 // Why this is safe against the style-flip race (the reasoning a reviewer will
@@ -447,8 +588,9 @@ void AdaptiveDrummerProcessor::timerCallback()
 // AdaptiveDrummer::processBlock() at the next step-0 bar wrap — and at that
 // exact moment applyPendingStyle() drops any adopted dynamic table
 // (tableExchange.releaseActive()), falling back to the new style's *unmuted*
-// built-in table. So on a style change this producer must get a freshly-muted
-// copy of the NEW style's table into the mailbox before (or by) that wrap.
+// built-in table. So on a style change this producer must get a fresh copy of
+// the NEW intended table (new style + mutes; the custom grid is discarded by
+// a style pick — see below) into the mailbox before (or by) that wrap.
 //
 // Two properties make that work:
 //
@@ -458,35 +600,72 @@ void AdaptiveDrummerProcessor::timerCallback()
 //      after the very wrap we need to beat). The 20 Hz poll therefore reacts
 //      within ≤50 ms of any style change, while the flip it must beat is at
 //      least one bar away — ≥1 s at the 240 BPM clamp in setBpm(). (Editor
-//      mute clicks don't even wait for the poll: setVoiceMuted() calls this
-//      synchronously.)
+//      mute clicks and grid edits don't even wait for the poll: their setters
+//      call this synchronously.)
 //   2. The consumer's wrap sequence is applyPendingStyle() *then* consume()
-//      (see AdaptiveDrummer::processBlock). So even when the muted table for
-//      the new style is published before the flip's own wrap, the same wrap
-//      that loads the new built-in table and releases the old dynamic slot
-//      immediately adopts the waiting muted copy — the documented same-wrap
+//      (see AdaptiveDrummer::processBlock). So even when the rebuilt table
+//      for the new style is published before the flip's own wrap, the same
+//      wrap that loads the new built-in table and releases the old dynamic
+//      slot immediately adopts the waiting copy — the documented same-wrap
 //      tie-break ("the dynamic table wins because consume() runs after
-//      applyPendingStyle()"). No unmuted bar, no audible gap.
+//      applyPendingStyle()"). No wrong-sounding bar, no audible gap.
 //
-// Residual, accepted transient: if the parameter changes again while both
-// mailbox slots are held (one active + one pending), tryStage() returns
-// nullptr and this update coalesces into a later tick — per the mailbox
-// contract that state resolves within one bar (every wrap consume()s), so the
-// stale table can play for at most one bar before the retry lands. Last-
-// writer-wins publishing means only the newest (style, mask) ever matters.
-void AdaptiveDrummerProcessor::publishMuteStateIfNeeded()
+// A style pick exits custom-grid mode (roadmap decision A): picking a style
+// means choosing that built-in groove — exactly the semantics
+// applyPendingStyle() already implements by dropping the dynamic table — so
+// the edge detector below discards the drawing the moment the parameter
+// changes. Host automation of "style" gets the same treatment as a button
+// click; there is no way (and no reason) to distinguish them here.
+//
+// Why a style change publishes even with mask == 0 and no custom grid (a
+// deliberate strengthening of the original mute-only producer, which skipped
+// that case): once anything has ever been published, the mailbox may hold a
+// stale unconsumed table — e.g. unmute publishes a clean copy of the OLD
+// style, then the style changes within the same bar. At the wrap,
+// applyPendingStyle() loads the new style but consume() runs right after it
+// and would adopt that stale old-style copy, which then plays indefinitely
+// (nothing else would trigger a republish). The message thread cannot know
+// whether a pending publish has been consumed, so after the first publish it
+// always supersedes on any relevant change; a copy that happens to be
+// byte-identical to the new built-in table is harmless. everPublished keeps
+// the never-touched case (no mute, no grid, ever) provably inert.
+//
+// Residual, accepted transient: if the inputs change again while both mailbox
+// slots are held (one active + one pending), tryStage() returns nullptr and
+// this update coalesces into a later tick — per the mailbox contract that
+// state resolves within one bar (every wrap consume()s), so a stale table can
+// play for at most one bar before the retry lands. Last-writer-wins
+// publishing means only the newest (style, mask, grid) ever matters.
+void AdaptiveDrummerProcessor::publishDynamicTableIfNeeded()
 {
     // Message thread only — this is TableExchange's single producer.
     const auto mask     = muteMask.load (std::memory_order_relaxed);
     const int  styleIdx = static_cast<int> (*apvts.getRawParameterValue ("style"));
 
-    // Idempotence: nothing to do unless the mask changed, or the target style
-    // changed while anything is muted. (A style change with mask == 0 needs
-    // no publish: the flip itself restores the new style's built-in table,
-    // and until that wrap the previously-published clean copy is
-    // byte-identical to the old style's built-in anyway.)
-    if (mask == lastPublishedMuteMask
-        && (mask == 0 || styleIdx == lastPublishedMuteStyle))
+    // Decision A's edge detector: a style pick discards the custom grid.
+    if (styleIdx != lastSeenStyleIdx)
+    {
+        lastSeenStyleIdx = styleIdx;
+        if (customGridActive)
+        {
+            customGridActive = false;
+            persistGridToState();
+        }
+    }
+
+    // Idempotence. Before anything has ever been published the mailbox stays
+    // untouched unless a mute or a custom grid actually needs it; afterwards,
+    // any change to the publish inputs supersedes (see the comment above for
+    // why that includes style-only changes with nothing muted/drawn).
+    if (everPublished)
+    {
+        if (mask == lastPublishedMuteMask
+            && styleIdx == lastPublishedStyle
+            && customGridActive == lastPublishedCustom
+            && (! customGridActive || gridRevision == lastPublishedGridRev))
+            return;
+    }
+    else if (mask == 0 && ! customGridActive)
         return;
 
     auto& exchange = drummer.getTableExchange();
@@ -494,20 +673,28 @@ void AdaptiveDrummerProcessor::publishMuteStateIfNeeded()
     if (slot == nullptr)
         return;   // both slots held — resolves within one bar; the next timer tick retries
 
-    // Muted copy of the target style's built-in table: zero the whole StepCell
-    // for every step of a muted voice's row. velHigh == 0 is the model's
-    // authored "this cell never plays" convention — stepFires() rejects such a
-    // cell before any threshold/probability logic runs (see DrumPattern.cpp),
-    // so this guarantees silence at every complexity/intensity/seed.
-    *slot = DrumPattern::getStyleTable (static_cast<DrumPattern::Style> (styleIdx));
+    // The intended table: the custom grid when active, else the target
+    // style's built-in table — then mutes compose on top by zeroing the whole
+    // StepCell for every step of a muted voice's row. velHigh == 0 is the
+    // model's authored "this cell never plays" convention — stepFires()
+    // rejects such a cell before any threshold/probability logic runs (see
+    // DrumPattern.cpp), so this guarantees silence at every complexity/
+    // intensity/seed. Composing here (rather than baking mutes into
+    // customGrid) keeps muting non-destructive to the drawing.
+    *slot = customGridActive
+                ? customGrid
+                : DrumPattern::getStyleTable (static_cast<DrumPattern::Style> (styleIdx));
     for (int v = 0; v < GrooveTable::kNumVoices; ++v)
         if ((mask & (1u << v)) != 0)
             for (int s = 0; s < GrooveTable::kNumSteps; ++s)
                 slot->cells[v][s] = StepCell {};
 
     exchange.publish();
-    lastPublishedMuteMask  = mask;
-    lastPublishedMuteStyle = styleIdx;
+    everPublished         = true;
+    lastPublishedMuteMask = mask;
+    lastPublishedStyle    = styleIdx;
+    lastPublishedCustom   = customGridActive;
+    lastPublishedGridRev  = gridRevision;
 }
 
 // ── Samples ───────────────────────────────────────────────────────────────────

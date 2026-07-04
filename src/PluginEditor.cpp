@@ -15,7 +15,7 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
       groovePad (*p.apvts.getParameter ("complexity"), *p.apvts.getParameter ("intensity"),
                  "COMPLEXITY", "INTENSITY")
 {
-    setSize (420, 668);   // +50px vs. v4: a new per-voice MUTES row
+    setSize (420, 824);   // +156px vs. v5: the GROOVE GRID row (roadmap Step 19)
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -104,6 +104,18 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
             addAndMakeVisible (btn);
         }
     }
+
+    // ── Groove grid (hand-drawable 6x16 pattern — roadmap Step 19) ───────────
+    grooveGrid.onCellEdit = [this] (int voice, int step, bool on, int velocity)
+    {
+        proc.setGridCell (voice, step, on, velocity);
+    };
+    addAndMakeVisible (grooveGrid);
+
+    clearGridButton.setColour (juce::TextButton::buttonColourId,  kPanel);
+    clearGridButton.setColour (juce::TextButton::textColourOffId, kAccent);
+    clearGridButton.onClick = [this] { proc.clearCustomGrid(); };
+    addAndMakeVisible (clearGridButton);
 
     // ── Transport (Play / Stop) ──────────────────────────────────────────────
     playButton.setClickingTogglesState (true);
@@ -207,6 +219,7 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.drawText ("ENERGY",  energyMeterBounds.getX(), 322, 80, 12, juce::Justification::left);
     g.drawText ("SOUND",   12, 434, 60, 12, juce::Justification::left);
     g.drawText ("MUTES",   12, 486, 60, 12, juce::Justification::left);
+    g.drawText ("GRID",    12, 534, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
@@ -270,22 +283,30 @@ void AdaptiveDrummerEditor::resized()
             muteButtons[v].setBounds (m + v * (muteW + gap), 498, muteW, 24);
     }
 
-    // BPM  y=550
-    bpmTitleLabel.setBounds (m,      550, 30, 14);
-    bpmValueLabel.setBounds (m + 30, 546, 80, 28);
+    // Groove grid — right of the GRID label, a "Clear Grid" reset button
+    // (same placement idiom as New Seed above the XY pad).
+    clearGridButton.setBounds (W - m - 80, 530, 80, 18);
+
+    // Groove grid itself  y=548-692 (144px: 6 rows * 24px, a comfortable
+    // click target). Everything below shifts down 156px vs. v5 to fit it.
+    grooveGrid.setBounds (m, 548, W - 2 * m, 144);
+
+    // BPM  y=706
+    bpmTitleLabel.setBounds (m,      706, 30, 14);
+    bpmValueLabel.setBounds (m + 30, 702, 80, 28);
 
     // Tap tempo — in the free space between the BPM display and the volume
     // knob (there's room; no window resize needed).
-    tapTempoButton.setBounds (m + 122, 546, 44, 28);
-    tapResultLabel.setBounds (m + 170, 550, 100, 20);
+    tapTempoButton.setBounds (m + 122, 702, 44, 28);
+    tapResultLabel.setBounds (m + 170, 706, 100, 20);
 
     // Volume  (right side)
-    volumeTitleLabel.setBounds (W - m - 60 - 14, 550, 30, 14);
-    volumeSlider    .setBounds (W - m - 60,       538, 60, 60);
+    volumeTitleLabel.setBounds (W - m - 60 - 14, 706, 30, 14);
+    volumeSlider    .setBounds (W - m - 60,       694, 60, 60);
 
     // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        628, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  630, W - 140, 20);
+    loadSamplesButton  .setBounds (m,        784, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  786, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -328,6 +349,13 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     const auto mask = proc.getMuteMask();
     for (int v = 0; v < GrooveTable::kNumVoices; ++v)
         muteButtons[v].setToggleState ((mask & (1u << v)) != 0, juce::dontSendNotification);
+
+    // Groove grid: show whatever table is currently intended (custom grid, or
+    // the target style's built-in table) with the mute mask overlaid — see
+    // AdaptiveDrummerProcessor::getGridTable() for why it's the target style,
+    // not the bar-latched one.
+    grooveGrid.setTable (proc.getGridTable(), mask);
+    clearGridButton.setEnabled (proc.hasCustomGrid());
 
     // Sound source buttons
     const bool useSynth = static_cast<int> (*proc.apvts.getRawParameterValue ("source")) == 0;

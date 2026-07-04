@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "XYPad.h"
+#include "GrooveGrid.h"
 #include "TapTempo.h"
 
 /**
@@ -11,6 +12,7 @@
  *   - Style selector  (Rock / Jazz / Electronic)
  *   - Groove XY pad (Complexity x, Intensity y — the 2-D groove axes)
  *   - Follow toggle + Follow Amount (guide-driven modulation strength)
+ *   - Groove grid (6 voices x 16 steps, hand-drawable — roadmap Step 19)
  *   - BPM display (host-synced or manual)
  *   - Volume knob
  *   - Sample-load status + browse button
@@ -68,6 +70,14 @@ private:
     // at the next bar wrap. Toggle state is re-synced from the processor's
     // mask each timer tick (same pattern as the style/source buttons).
     juce::TextButton muteButtons[GrooveTable::kNumVoices];
+
+    // User-drawable groove grid (roadmap Step 19). Polled from the processor's
+    // getGridTable()/getMuteMask() at the editor's existing 10 Hz rate (same
+    // pattern as the style/mute buttons); edits are forwarded to
+    // AdaptiveDrummerProcessor::setGridCell(). "Clear Grid" drops back to
+    // plain style + mutes (AdaptiveDrummerProcessor::clearCustomGrid()).
+    GrooveGrid       grooveGrid;
+    juce::TextButton clearGridButton { "Clear Grid" };
 
     // Transport — drives the standalone; also overrides a stopped host transport
     juce::TextButton playButton { "Play" };

@@ -80,12 +80,12 @@ public:
     void     randomizeGrooveSeed();
     uint32_t getCurrentGrooveSeed() const noexcept { return currentGrooveSeed.load (std::memory_order_relaxed); }
 
-    // ── Per-voice mutes (the first real TableExchange producer) ───────────────
+    // ── Per-voice mutes (a TableExchange producer input) ──────────────────────
     /** Mutes/unmutes one drum voice (DrumPattern voice index: 0 Kick, 1 Snare,
         2 HiHat, 3 Crash, 4 Ride, 5 Tom). Message thread only (persists into
         apvts.state, like randomizeGrooveSeed) — the editor's mute buttons are
         the caller. Publishes the rebuilt table synchronously via
-        publishMuteStateIfNeeded(), so a click takes effect at the very next
+        publishDynamicTableIfNeeded(), so a click takes effect at the very next
         bar wrap. */
     void setVoiceMuted (int voice, bool shouldMute);
     bool isVoiceMuted  (int voice) const noexcept
@@ -94,16 +94,52 @@ public:
     }
     uint8_t getMuteMask () const noexcept { return muteMask.load (std::memory_order_relaxed); }
 
-    /** The mute producer routine (message thread ONLY — this is TableExchange's
-        producer side): if the mute mask or the target style changed since the
-        last publish, rebuilds a muted copy of the target style's built-in
-        table and publishes it into the drummer's TableExchange. Idempotent —
-        a no-change call returns immediately. Called synchronously by
-        setVoiceMuted() and from the processor's 20 Hz message-thread timer
-        (see timerCallback() for why a timer, and why it polls the "style"
-        *parameter* rather than the drummer's bar-latched style). Public so
-        tests can drive it deterministically without pumping the timer. */
-    void publishMuteStateIfNeeded();
+    // ── User-drawable groove grid (roadmap Step 19's destination) ─────────────
+    /** True while a hand-drawn custom grid (not a built-in style) is the
+        pattern source. Message thread only, like the rest of the grid API. */
+    bool hasCustomGrid() const noexcept { return customGridActive; }
+
+    /** The table the editor's grid displays and edits right now: the custom
+        grid when one is active, else the target style's built-in table (keyed
+        off the raw "style" parameter, exactly like the producer routine — the
+        grid must show the style the user just *picked*, not the bar-latched
+        one). Mutes are NOT baked into this table (they compose at publish
+        time inside publishDynamicTableIfNeeded()); the editor dims muted rows
+        via getMuteMask() instead. Message thread only. */
+    const GrooveTable& getGridTable() const noexcept;
+
+    /** Draws one grid cell (message thread only; the editor's GrooveGrid is
+        the caller). The first edit enters "custom pattern" mode: the target
+        style's built-in table is copied into the custom grid (so the drawing
+        starts from what was audible) and every later edit mutates that same
+        copy. Cell conventions (see the roadmap's Step 19 decisions):
+          on  → { vel, vel, threshold 0, probability 255, rand 0, flags 0 } —
+                a hand-placed hit always fires, at exactly the drawn velocity,
+                regardless of the complexity axis or seed;
+          off → StepCell{} (velHigh == 0 = the model's never-plays convention,
+                the same zeroing the mute producer uses).
+        velocity127 is clamped to [1, 127] for "on" (0 would contradict "on").
+        Persists into apvts.state and publishes synchronously. */
+    void setGridCell (int voice, int step, bool on, int velocity127);
+
+    /** Exits custom-pattern mode: discards the drawn grid and republishes
+        plain style + mutes (the editor's "Clear Grid" button). No-op when no
+        custom grid is active. Message thread only. */
+    void clearCustomGrid();
+
+    /** The unified TableExchange producer routine (message thread ONLY — this
+        is the mailbox's single producer): rebuilds the currently-intended
+        table from (custom grid or target style's built-in table) + the mute
+        mask, and publishes it if anything relevant changed since the last
+        publish. Also owns the "a style pick exits custom-grid mode" rule
+        (see the implementation comment). Idempotent — a no-change call
+        returns immediately. Called synchronously by setVoiceMuted() /
+        setGridCell() / clearCustomGrid() and from the processor's 20 Hz
+        message-thread timer (see timerCallback() for why a timer, and why it
+        polls the "style" *parameter* rather than the drummer's bar-latched
+        style). Public so tests can drive it deterministically without pumping
+        the timer. */
+    void publishDynamicTableIfNeeded();
 
     /** The table actually driving the drummer right now (mirrors
         AdaptiveDrummer::getActiveTable()). Introspection for tests — pointer
@@ -153,9 +189,9 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
-    /** The message-thread poll driving publishMuteStateIfNeeded() (20 Hz).
+    /** The message-thread poll driving publishDynamicTableIfNeeded() (20 Hz).
         Why a processor-side timer, and why it exists at all — the style-flip
-        race (see publishMuteStateIfNeeded()'s implementation comment): a
+        race (see publishDynamicTableIfNeeded()'s implementation comment): a
         style change must cause a freshly-muted copy of the *new* style's
         table to reach the mailbox before that flip's own bar wrap. The
         editor's 10 Hz poll can't be the mechanism (the editor may be closed
@@ -212,13 +248,37 @@ private:
     // switch, not something a host should ramp/automate per-sample.
     std::atomic<uint8_t> muteMask { 0 };
 
-    // What publishMuteStateIfNeeded() last published — message thread only.
+    // ── User-drawable groove grid — message-thread producer state ─────────────
+    // The custom grid's cells (valid iff customGridActive). Mutes are NOT
+    // baked in here: they compose on top at publish time, so muting is
+    // non-destructive to the drawing (unmuting restores the drawn row).
+    // gridRevision bumps on every mutation/load, so the publish routine can
+    // tell "same custom grid" from "same flag, different cells" (state
+    // restore) without diffing 584 bytes.
+    bool        customGridActive { false };
+    GrooveTable customGrid {};
+    uint32_t    gridRevision { 0 };
+
+    // Style value last observed by the producer poll — the edge detector for
+    // decision "a style pick exits custom-grid mode". Message thread only.
+    int lastSeenStyleIdx { 0 };
+
+    /** (Re)writes or removes the gridData/gridVersion state-tree properties to
+        mirror customGridActive/customGrid. Message thread only. */
+    void persistGridToState();
+
+    // What publishDynamicTableIfNeeded() last published — message thread only.
     // Makes the 20 Hz poll idempotent (no mailbox spam when nothing changed)
     // and doubles as the retry latch: a tryStage() nullptr leaves these stale,
     // so the next tick simply tries again (the mailbox contract: coalesce and
-    // retry, never spin).
-    uint8_t lastPublishedMuteMask  { 0 };
-    int     lastPublishedMuteStyle { -1 };
+    // retry, never spin). everPublished keeps a never-touched processor's
+    // mailbox provably inert (nothing publishes until a mute or a grid edit
+    // first needs to).
+    uint8_t  lastPublishedMuteMask { 0 };
+    int      lastPublishedStyle    { -1 };
+    bool     lastPublishedCustom   { false };
+    uint32_t lastPublishedGridRev  { 0 };
+    bool     everPublished         { false };
 
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
 
