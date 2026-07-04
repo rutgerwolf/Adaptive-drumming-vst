@@ -1,6 +1,7 @@
 #include "DrumSampler.h"
 #include "DrumStepClock.h"
 
+#include <cmath>
 #include <utility>
 
 const char* DrumSampler::kVoiceDirs[DrumSampler::kNumVoices] =
@@ -207,9 +208,40 @@ bool DrumSampler::readWavInto (const juce::File& file, juce::AudioBuffer<float>&
         formatManager.createReaderFor (file));
     if (reader == nullptr) return false;
 
-    dest.setSize (static_cast<int> (reader->numChannels),
-                  static_cast<int> (reader->lengthInSamples));
-    reader->read (&dest, 0, static_cast<int> (reader->lengthInSamples), 0, true, true);
+    const int numCh  = static_cast<int> (reader->numChannels);
+    const int srcLen = static_cast<int> (reader->lengthInSamples);
+    if (numCh <= 0 || srcLen <= 0) return false;
+
+    // Same rate (the overwhelmingly common case): read straight through,
+    // exactly as before resampling existed — no interpolation, no rounding.
+    if (reader->sampleRate <= 0.0 || juce::approximatelyEqual (reader->sampleRate, currentSampleRate))
+    {
+        dest.setSize (numCh, srcLen);
+        reader->read (&dest, 0, srcLen, 0, true, true);
+        return dest.getNumSamples() > 0;
+    }
+
+    // A kit recorded at a different rate would otherwise play its raw samples
+    // back 1:1 at the wrong rate — pitched and off-tempo (currentSampleRate
+    // was stored but never used for this). Resample here, on the loading
+    // thread, so the audio thread's playback path stays untouched (still raw
+    // 1:1 reads — just correct by construction now).
+    juce::AudioBuffer<float> raw (numCh, srcLen);
+    reader->read (&raw, 0, srcLen, 0, true, true);
+
+    const double ratio   = reader->sampleRate / currentSampleRate;   // input samples per output sample
+    const int    destLen = juce::jmax (1, (int) std::llround ((double) srcLen / ratio));
+    dest.setSize (numCh, destLen);
+
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        // A fresh interpolator per channel: each keeps its own history state,
+        // and this call's history must not bleed into the next file loaded.
+        juce::LagrangeInterpolator interp;
+        interp.process (ratio, raw.getReadPointer (ch), dest.getWritePointer (ch),
+                        destLen, srcLen, 0);   // wrapAround 0: feed zeroes past the source's end
+    }
+
     return dest.getNumSamples() > 0;
 }
 

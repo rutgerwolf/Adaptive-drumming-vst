@@ -120,6 +120,12 @@ bool AdaptiveDrummerProcessor::isBusesLayoutSupported (const BusesLayout& layout
 
 void AdaptiveDrummerProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // A kit already loaded (and resampled — see DrumSampler::readWavInto) for
+    // the previous rate must be reloaded and resampled for this one, not left
+    // as-is just because something is already loaded.
+    const bool sampleRateChanged = ! juce::approximatelyEqual (sampleRate, lastPrepareSampleRate);
+    lastPrepareSampleRate = sampleRate;
+
     drummer.prepare (sampleRate, samplesPerBlock);
     energyAnalyzer.prepare (sampleRate, samplesPerBlock);
     wasPlaying = false;
@@ -127,7 +133,7 @@ void AdaptiveDrummerProcessor::prepareToPlay (double sampleRate, int samplesPerB
     volumeSmoothed.reset (sampleRate, 0.02);   // 20 ms ramp
     volumeSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("volume"));
 
-    autoLoadSamples();
+    autoLoadSamples (sampleRateChanged);
 }
 
 void AdaptiveDrummerProcessor::releaseResources()
@@ -341,9 +347,12 @@ bool AdaptiveDrummerProcessor::loadSamples (const juce::File& samplesRoot)
 // Resolve and load a kit off the audio thread, without forcing the user to
 // re-pick it every session: a folder remembered in saved state first, then
 // assets shipped next to the plugin binary or the host/standalone executable.
-void AdaptiveDrummerProcessor::autoLoadSamples()
+// forceReload (set on an actual sample-rate change) bypasses the "already
+// loaded" early-out, since a kit resampled for the old rate must be reloaded
+// and re-resampled for the new one, not left as-is.
+void AdaptiveDrummerProcessor::autoLoadSamples (bool forceReload)
 {
-    if (drummer.areSamplesLoaded())
+    if (drummer.areSamplesLoaded() && ! forceReload)
         return;
 
     juce::Array<juce::File> candidates;

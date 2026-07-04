@@ -97,11 +97,15 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
-    void autoLoadSamples();
+    /** forceReload bypasses the areSamplesLoaded() early-out — used when the
+        sample rate just changed, so a kit already loaded (and resampled) for
+        the old rate gets reloaded and resampled for the new one. */
+    void autoLoadSamples (bool forceReload);
 
     AdaptiveDrummer  drummer;
     EnergyAnalyzer   energyAnalyzer;
     bool             wasPlaying { false };   // audio-thread only; edge-detects transport stop
+    double           lastPrepareSampleRate { 0.0 };   // detects a real sample-rate change across prepareToPlay calls
     std::atomic<double> currentBpm             { 120.0 };
     std::atomic<bool>   bpmFromHost            { false };
     std::atomic<float>  currentComplexityState { 0.55f };   // mask-equivalent to legacy Medium

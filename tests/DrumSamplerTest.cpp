@@ -516,6 +516,90 @@ public:
             kitRoot.deleteRecursively();
             kickOnlyRoot.deleteRecursively();
         }
+
+        beginTest ("resampling — a kit recorded at a different sample rate plays at the correct pitch and length");
+        {
+            // Source WAV at 22.05 kHz, sampler prepared at 44.1 kHz — a real
+            // scenario (a kit recorded/exported at a different rate than the
+            // session). Before resampling existed, DrumSampler read the raw
+            // samples through unchanged and played them back 1:1 at the
+            // prepared rate: with a slower source than the target, that
+            // doubles the perceived pitch and halves the rendered length.
+            const double srcRate     = 22050.0;
+            const double targetRate  = 44100.0;
+            const double toneFreqHz  = 1000.0;
+            const double toneSeconds = 0.1;
+            const int    srcLen      = (int) std::llround (srcRate * toneSeconds);   // 2205
+
+            auto kitRoot = juce::File::createTempFile ("adk_resample_kit");
+            kitRoot.deleteFile();
+            kitRoot.createDirectory();
+            auto kickDir = kitRoot.getChildFile ("kick");
+            kickDir.createDirectory();
+            writeSineWav (kickDir.getChildFile ("kick.wav"), srcLen, srcRate, toneFreqHz);
+
+            DrumSampler sampler;
+            sampler.prepare (targetRate);
+            expect (sampler.loadSamples (kitRoot), "mismatched-rate kit should still load");
+            expect (sampler.areSamplesLoaded());
+
+            // Electronic / Sparse fires the kick alone on step 0.
+            DrumPattern pattern;
+            pattern.loadStyle  (DrumPattern::Style::Electronic);
+            pattern.setDensity (DrumPattern::Density::Sparse);
+
+            const int captureLen = (int) std::llround (targetRate * toneSeconds * 1.5);   // headroom past the tone
+            juce::AudioBuffer<float> captured (1, captureLen);
+            captured.clear();
+
+            const int blockSize = 512;
+            int playhead = 0, written = 0;
+            juce::AudioBuffer<float> block (1, blockSize);
+            while (written < captureLen)
+            {
+                const int n = juce::jmin (blockSize, captureLen - written);
+                block.setSize (1, n, false, false, true);
+                block.clear();
+                sampler.processBlock (block, n, targetRate, pattern, 60.0, playhead, 0);
+                captured.copyFrom (0, written, block, 0, 0, n);
+                written  += n;
+                playhead += n;
+            }
+
+            // Find the audible region, then estimate pitch by counting
+            // rising zero-crossings across it.
+            const float* d = captured.getReadPointer (0);
+            int firstNonSilent = -1, lastNonSilent = -1;
+            for (int i = 0; i < captureLen; ++i)
+                if (std::abs (d[i]) > 1.0e-4f)
+                {
+                    if (firstNonSilent < 0) firstNonSilent = i;
+                    lastNonSilent = i;
+                }
+
+            expect (firstNonSilent >= 0, "the resampled tone must be audible");
+
+            int crossings = 0;
+            for (int i = juce::jmax (firstNonSilent, 1); i <= lastNonSilent; ++i)
+                if (d[i - 1] < 0.0f && d[i] >= 0.0f)
+                    ++crossings;
+
+            const int    renderedLen        = lastNonSilent - firstNonSilent + 1;
+            const double activeSeconds       = (double) renderedLen / targetRate;
+            const double estimatedFreqHz     = crossings / activeSeconds;
+            const int    expectedRenderedLen = (int) std::llround (srcLen * (targetRate / srcRate));
+
+            logMessage ("resample check: ~" + juce::String (estimatedFreqHz, 1) + " Hz over "
+                        + juce::String (renderedLen) + " samples (expected ~" + juce::String (toneFreqHz, 1)
+                        + " Hz, ~" + juce::String (expectedRenderedLen) + " samples)");
+
+            expectWithinAbsoluteError (estimatedFreqHz, toneFreqHz, 50.0,
+                                      "resampled tone must sound at ~1 kHz, not ~2 kHz (the un-resampled rate ratio)");
+            expect (std::abs (renderedLen - expectedRenderedLen) <= 16,
+                    "resampled length must match source seconds * target rate within +/-16 samples");
+
+            kitRoot.deleteRecursively();
+        }
     }
 
 private:
@@ -540,6 +624,32 @@ private:
             else
             {
                 delete os;   // writer takes ownership only on success
+            }
+        }
+    }
+
+    // Writes a mono WAV of `numSamples` at `sr` containing a pure sine at
+    // `freqHz` to `file`.
+    void writeSineWav (const juce::File& file, int numSamples, double sr, double freqHz)
+    {
+        file.deleteFile();
+
+        juce::WavAudioFormat fmt;
+        if (auto* os = file.createOutputStream().release())
+        {
+            std::unique_ptr<juce::AudioFormatWriter> writer (
+                fmt.createWriterFor (os, sr, 1, 16, {}, 0));
+
+            if (writer != nullptr)
+            {
+                juce::AudioBuffer<float> buf (1, numSamples);
+                for (int i = 0; i < numSamples; ++i)
+                    buf.setSample (0, i, (float) std::sin (juce::MathConstants<double>::twoPi * freqHz * i / sr));
+                writer->writeFromAudioSampleBuffer (buf, 0, numSamples);
+            }
+            else
+            {
+                delete os;
             }
         }
     }
