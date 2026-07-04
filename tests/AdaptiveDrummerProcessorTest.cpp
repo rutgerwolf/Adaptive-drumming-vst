@@ -820,7 +820,7 @@ public:
             // and consume() second, so the muted Jazz copy wins the same wrap.
             auto* styleParam = proc.apvts.getParameter ("style");
             styleParam->setValueNotifyingHost (styleParam->convertTo0to1 (1.0f));
-            proc.publishMuteStateIfNeeded();
+            proc.publishDynamicTableIfNeeded();
 
             // One bar at the default 120 BPM / 44.1 kHz = 88200 samples.
             // Render to just short of the wrap: the muted Rock copy must hold.
@@ -888,6 +888,241 @@ public:
             dirty.setStateInformation (preMuteState.getData(), (int) preMuteState.getSize());
             expectEquals ((int) dirty.getMuteMask(), 0,
                           "a session without the property must reset the mask to 0 (nothing muted)");
+        }
+
+        // ── User-drawable groove grid (roadmap Step 19) ───────────────────────
+
+        beginTest ("setGridCell toggles a cell on/off with the correct StepCell conventions");
+        {
+            AdaptiveDrummerProcessor proc;
+            expect (! proc.hasCustomGrid(), "premise: no custom grid before the first edit");
+
+            proc.setGridCell (1 /*Snare*/, 3, true, 90);
+            expect (proc.hasCustomGrid(), "the first edit must enter custom-grid mode");
+
+            const StepCell& on = proc.getGridTable().cells[1][3];
+            expectEquals ((int) on.velLow,              90,  "velLow must equal the drawn velocity");
+            expectEquals ((int) on.velHigh,              90,  "velHigh must equal the drawn velocity (no intensity-axis spread)");
+            expectEquals ((int) on.complexityThreshold,  0,   "a hand-drawn hit must always be eligible");
+            expectEquals ((int) on.probability,          255, "a hand-drawn hit must be deterministic");
+            expectEquals ((int) on.velRandRange,         0,   "no humanization jitter on a hand-placed hit");
+            expectEquals ((int) on.flags,                0,   "no accent/ghost weighting");
+
+            proc.setGridCell (1, 3, false, 0);
+            const StepCell& off = proc.getGridTable().cells[1][3];
+            expect (off.velLow == 0 && off.velHigh == 0 && off.complexityThreshold == 0
+                        && off.probability == 0 && off.velRandRange == 0 && off.flags == 0,
+                    "off must be the fully-zeroed StepCell{} convention, matching the mute feature's precedent");
+        }
+
+        beginTest ("the unified producer composes grid + mutes: a muted voice's custom cells stay silent (decision B)");
+        {
+            // Decision B's resolution: mutes compose non-destructively on top
+            // of the custom grid at publish time (the drawing itself is never
+            // touched), so a muted row is silent regardless of what's drawn on
+            // it, and unmuting later would reveal the drawing intact.
+            AdaptiveDrummerProcessor proc;
+            proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+            proc.prepareToPlay (44100.0, 512);
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+
+            proc.setGridCell  (0 /*Kick*/, 0, true, 120);   // draw a kick hit
+            proc.setVoiceMuted (0, true);                    // then mute the kick
+
+            juce::AudioBuffer<float> buffer (2, 512);
+            juce::MidiBuffer midi;
+            buffer.clear();
+            proc.processBlock (buffer, midi);   // playhead starts at step 0 — adopts immediately
+
+            const GrooveTable& active = proc.getActiveGrooveTable();
+            expectEquals ((int) active.cells[0][0].velHigh, 0,
+                          "a muted voice's row must be silent even with a custom cell drawn on it");
+
+            // The underlying drawing itself must be untouched (composed, not
+            // destroyed) -- getGridTable() reports the custom grid regardless
+            // of mutes, exactly so the editor can show the drawing under a
+            // dimmed/read-only row.
+            expectEquals ((int) proc.getGridTable().cells[0][0].velHigh, 120,
+                          "muting must not destructively edit the drawn cell");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("a grid edit bar-latches: adopted at the next bar wrap, not before");
+        {
+            // Same getActiveTable()-pointer-identity technique as
+            // AdaptiveDrummerTest.cpp's TableExchange bar-latch tests.
+            AdaptiveDrummerProcessor proc;
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+            proc.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+
+            // First block: nothing published yet, so the mailbox stays inert
+            // and the built-in Rock table plays -- also moves the playhead
+            // off step 0 so the edit below lands mid-bar.
+            buffer.clear();
+            proc.processBlock (buffer, midi);
+            const GrooveTable& rock = DrumPattern::getStyleTable (DrumPattern::Style::Rock);
+            expect (&proc.getActiveGrooveTable() == &rock, "premise: still the built-in Rock table");
+
+            proc.setGridCell (0, 0, true, 100);   // publishes synchronously, mid-bar
+
+            const int patternLen = 88200;   // one bar at 120 BPM / 44.1 kHz
+            int rendered = blockSize;
+            while (rendered + blockSize < patternLen)
+            {
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+                rendered += blockSize;
+                expect (&proc.getActiveGrooveTable() == &rock,
+                        "the drawn cell must not be adopted before the next bar wrap");
+            }
+
+            buffer.clear();
+            proc.processBlock (buffer, midi);   // crosses the wrap
+
+            const GrooveTable& afterWrap = proc.getActiveGrooveTable();
+            expect (&afterWrap != &rock, "a dynamic (custom-grid) table must be active after the wrap");
+            expectEquals ((int) afterWrap.cells[0][0].velHigh, 100,
+                          "the drawn kick hit must be present in the adopted table");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("a style flip discards the custom grid -- the new style's built-in table becomes active (decision A)");
+        {
+            AdaptiveDrummerProcessor proc;
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+            proc.setPlayConfigDetails (2, 2, sampleRate, blockSize);
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+
+            proc.setGridCell (0, 0, true, 100);   // enter custom-grid mode
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            juce::MidiBuffer midi;
+            buffer.clear();
+            proc.processBlock (buffer, midi);   // adopt the custom grid at step 0 (playhead starts there)
+
+            expect (proc.hasCustomGrid(), "premise: custom grid active");
+            expectEquals ((int) proc.getActiveGrooveTable().cells[0][0].velHigh, 100,
+                          "premise: the drawn cell is live");
+
+            // Style -> Jazz (editor click or host automation), and the
+            // producer poll reacts -- simulated directly, well before the
+            // flip's own bar wrap (>= 1 s away at any legal tempo).
+            auto* styleParam = proc.apvts.getParameter ("style");
+            styleParam->setValueNotifyingHost (styleParam->convertTo0to1 (1.0f));
+            proc.publishDynamicTableIfNeeded();
+
+            expect (! proc.hasCustomGrid(), "a style pick must immediately exit custom-grid mode (decision A)");
+
+            const int patternLen = 88200;
+            int rendered = blockSize;
+            while (rendered + blockSize < patternLen)
+            {
+                buffer.clear();
+                proc.processBlock (buffer, midi);
+                rendered += blockSize;
+            }
+            buffer.clear();
+            proc.processBlock (buffer, midi);   // crosses the wrap
+
+            // Content check, not pointer identity: publishDynamicTableIfNeeded()
+            // deliberately republishes a fresh COPY of the new style's
+            // built-in table here rather than relying on the bare style flip
+            // to restore the literal built-in pointer (see that routine's
+            // "why a style change publishes even with mask == 0" comment) --
+            // this closes a real staleness race (an earlier publish targeting
+            // the OLD style could otherwise still be sitting unconsumed and
+            // get wrongly adopted at this very wrap). The adopted table must
+            // therefore be BYTE-IDENTICAL to Jazz's built-in groove, even
+            // though its address differs -- exactly the same convention the
+            // mute-feature's own bar-latch test above already uses
+            // (&afterWrap != &jazz, content compared via styleSalt/memcmp).
+            const GrooveTable& jazz      = DrumPattern::getStyleTable (DrumPattern::Style::Jazz);
+            const GrooveTable& afterWrap = proc.getActiveGrooveTable();
+            expectEquals ((int) afterWrap.styleSalt, (int) jazz.styleSalt,
+                          "the adopted table must be Jazz's content, not the discarded custom grid");
+            expect (std::memcmp (&afterWrap, &jazz, sizeof (GrooveTable)) == 0,
+                    "after the flip's wrap, the table must be byte-identical to Jazz's built-in groove -- "
+                    "the custom grid discarded, not merged (decision A)");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("custom grid persists: draws survive a state round-trip and are republished on load");
+        {
+            AdaptiveDrummerProcessor proc;
+            proc.setGridCell (1, 4, true, 110);   // Snare, step 4
+            proc.setGridCell (2, 7, true, 60);    // HiHat, step 7
+            expect (proc.hasCustomGrid(), "premise: custom grid active");
+
+            juce::MemoryBlock savedState;
+            proc.getStateInformation (savedState);
+
+            AdaptiveDrummerProcessor fresh;
+            fresh.setStateInformation (savedState.getData(), (int) savedState.getSize());
+
+            expect (fresh.hasCustomGrid(), "a saved custom grid must be restored as a custom grid on load");
+            const GrooveTable& restored = fresh.getGridTable();
+            expectEquals ((int) restored.cells[1][4].velHigh, 110, "the snare cell must survive the round-trip");
+            expectEquals ((int) restored.cells[2][7].velHigh, 60,  "the hihat cell must survive the round-trip");
+
+            // Must actually be published and eventually adopted at the bar
+            // wrap, not just sit in state -- playhead starts at step 0 on a
+            // fresh instance, so the first processBlock() adopts immediately.
+            fresh.setPlayConfigDetails (2, 2, 44100.0, 512);
+            fresh.prepareToPlay (44100.0, 512);
+            fresh.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+            juce::AudioBuffer<float> buffer (2, 512);
+            juce::MidiBuffer midi;
+            buffer.clear();
+            fresh.processBlock (buffer, midi);
+
+            const GrooveTable& active = fresh.getActiveGrooveTable();
+            expectEquals ((int) active.cells[1][4].velHigh, 110,
+                          "the restored custom grid must be adopted, not the built-in style table");
+            fresh.releaseResources();
+        }
+
+        beginTest ("a pre-grid session (no gridData) loads with no custom grid and no crash");
+        {
+            AdaptiveDrummerProcessor seed;   // never touches the grid
+            juce::MemoryBlock savedState;
+            seed.getStateInformation (savedState);
+
+            // Strip gridData/gridVersion defensively (same idiom as the
+            // mute-mask/followAmount pre-feature migration tests above) --
+            // premise: a real pre-grid session genuinely lacks them.
+            auto xml = juce::AudioProcessor::getXmlFromBinary (savedState.getData(), (int) savedState.getSize());
+            expect (xml != nullptr, "seed state must parse as XML");
+            xml->removeAttribute ("gridData");
+            xml->removeAttribute ("gridVersion");
+            juce::MemoryBlock preGridState;
+            juce::AudioProcessor::copyXmlToBinary (*xml, preGridState);
+
+            AdaptiveDrummerProcessor fresh;
+            fresh.setGridCell (0, 0, true, 100);   // a live custom grid the load must clear
+            fresh.setStateInformation (preGridState.getData(), (int) preGridState.getSize());
+
+            expect (! fresh.hasCustomGrid(), "a session without gridData must load with no custom grid");
+
+            // No crash rendering afterwards.
+            fresh.setPlayConfigDetails (2, 2, 44100.0, 512);
+            fresh.prepareToPlay (44100.0, 512);
+            fresh.apvts.getParameter ("play")->setValueNotifyingHost (1.0f);
+            juce::AudioBuffer<float> buffer (2, 512);
+            juce::MidiBuffer midi;
+            buffer.clear();
+            fresh.processBlock (buffer, midi);
+            fresh.releaseResources();
         }
 
         // ── Step 17: async kit loading ────────────────────────────────────────
