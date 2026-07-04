@@ -652,6 +652,192 @@ public:
                                        "intensity must be derived from the restored legacy density, "
                                        "not left at the plain default");
         }
+
+        // ── Step 17: async kit loading ────────────────────────────────────────
+
+        // Pumps the message loop (so callAsync write-backs land) while waiting
+        // for `condition`, up to timeoutMs. Returns whether it came true.
+        auto pumpUntil = [] (std::function<bool()> condition, int timeoutMs)
+        {
+            const auto deadline = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
+            while (! condition() && juce::Time::getMillisecondCounter() < deadline)
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+            return condition();
+        };
+
+        beginTest ("setStateInformation returns promptly and loads the remembered kit asynchronously (Step 17)");
+        {
+            // A kit at 22.05 kHz while the sampler targets 44.1 kHz: the load
+            // must read *and resample* (Step 16), so a synchronous load takes
+            // long enough that the immediately-after-return check below can
+            // never race a legitimately fast async completion. 400k source
+            // samples ≈ 18 s of audio ≈ 800 KB on disk.
+            auto kitRoot = makeTempKitWithKick (400000, 22050.0);
+
+            juce::MemoryBlock savedState;
+            {
+                AdaptiveDrummerProcessor seed;
+                // The explicit (editor-button) load path stays synchronous —
+                // pinned here: the result is known the moment it returns, no
+                // message-loop pumping required.
+                expect (seed.loadSamples (kitRoot), "explicit load must succeed");
+                expect (seed.areSamplesLoaded(),
+                        "explicit loadSamples() must have completed synchronously");
+                seed.getStateInformation (savedState);
+            }
+
+            AdaptiveDrummerProcessor fresh;
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            fresh.setStateInformation (savedState.getData(), (int) savedState.getSize());
+            const auto elapsedMs = juce::Time::getMillisecondCounterHiRes() - t0;
+
+            // The discriminating check: a synchronous reload would have the kit
+            // loaded before setStateInformation even returned.
+            expect (! fresh.areSamplesLoaded(),
+                    "setStateInformation must not have loaded the kit synchronously "
+                    "(the load belongs on the background pool)");
+            expectLessThan (elapsedMs, 50.0,
+                            "setStateInformation must return promptly, not block on file I/O");
+
+            expect (pumpUntil ([&] { return fresh.areSamplesLoaded(); }, 10000),
+                    "the remembered kit must finish loading in the background");
+            expect (pumpUntil ([&] { return ! fresh.isKitLoadInFlight(); }, 10000),
+                    "the background job must report itself finished");
+
+            // The success write-back (posted via callAsync) must have kept the
+            // remembered path pointing at the kit that actually loaded.
+            expect (pumpUntil ([&]
+                    {
+                        return fresh.apvts.state.getProperty ("samplesPath").toString()
+                                 == kitRoot.getFullPathName();
+                    }, 10000),
+                    "samplesPath must still name the loaded kit after the async round-trip");
+
+            // Destroying a processor the instant its job was enqueued must join
+            // cleanly — no crash, no use-after-free, no hang (pluginval cycles
+            // state/teardown aggressively).
+            {
+                AdaptiveDrummerProcessor shortLived;
+                shortLived.setStateInformation (savedState.getData(), (int) savedState.getSize());
+            }
+            expect (true, "destruction with a kit load in flight must complete cleanly");
+
+            kitRoot.deleteRecursively();
+        }
+
+        beginTest ("repeated prepareToPlay with no kit found dispatches exactly one scan (Step 17)");
+        {
+            // Counter hook (getKitLoadsRequested) rather than a timing proxy:
+            // dispatching is deliberately cheap whether or not it re-dispatches
+            // (the work happens on the pool thread), so wall clock can't tell
+            // the two worlds apart.
+            AdaptiveDrummerProcessor proc;
+            expectEquals (proc.getKitLoadsRequested(), 0, "no scan before the first prepare");
+
+            // First prepare: the rate "changes" from unset to 44.1 kHz, so a
+            // scan is due (Step 16 semantics preserved).
+            proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+            proc.prepareToPlay (44100.0, 512);
+            expectEquals (proc.getKitLoadsRequested(), 1, "first prepare must dispatch one scan");
+
+            // Let the doomed scan finish so the re-prepares below exercise the
+            // triedAutoLoad latch, not merely the in-flight guard.
+            expect (pumpUntil ([&] { return ! proc.isKitLoadInFlight(); }, 10000),
+                    "the scan job must finish");
+            expect (! proc.areSamplesLoaded(), "premise: no kit is findable in the test environment");
+
+            for (int i = 0; i < 5; ++i)
+                proc.prepareToPlay (44100.0, 512);
+            expectEquals (proc.getKitLoadsRequested(), 1,
+                          "same-rate re-prepares with nothing found must not re-dispatch the scan");
+
+            // A genuine sample-rate change is worth one fresh scan even though
+            // the last one found nothing (Step 16's forceReload requirement).
+            proc.prepareToPlay (48000.0, 512);
+            expectEquals (proc.getKitLoadsRequested(), 2,
+                          "a real sample-rate change must dispatch a fresh scan");
+
+            expect (pumpUntil ([&] { return ! proc.isKitLoadInFlight(); }, 10000),
+                    "the rate-change scan job must finish");
+            proc.releaseResources();
+        }
+
+        beginTest ("an explicit user load counts as tried — later prepares reload it, never an unrelated scan (Step 17)");
+        {
+            auto kitRoot = makeTempKitWithKick (2000, 44100.0);
+
+            AdaptiveDrummerProcessor proc;
+            expect (proc.loadSamples (kitRoot), "explicit load must succeed");
+            expect (proc.areSamplesLoaded(), "explicit load is synchronous");
+            expectEquals (proc.getKitLoadsRequested(), 0, "an explicit load is not a background scan");
+
+            // First-ever prepare *is* a rate change (unset → 44.1 kHz), so one
+            // reload is due — but through the remembered path, i.e. the user's
+            // own kit, resampled for the now-known rate.
+            proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+            proc.prepareToPlay (44100.0, 512);
+            expectEquals (proc.getKitLoadsRequested(), 1,
+                          "the first prepare after an explicit load re-dispatches once (rate now known)");
+
+            expect (pumpUntil ([&] { return ! proc.isKitLoadInFlight(); }, 10000),
+                    "the reload job must finish");
+            expect (proc.areSamplesLoaded(), "the user's kit must still be loaded");
+            expect (pumpUntil ([&]
+                    {
+                        return proc.apvts.state.getProperty ("samplesPath").toString()
+                                 == kitRoot.getFullPathName();
+                    }, 10000),
+                    "the remembered path must still be the user's kit — no unrelated scan winner");
+
+            // Same-rate re-prepares: kit loaded, user's choice made — nothing
+            // to dispatch, nothing to race.
+            for (int i = 0; i < 5; ++i)
+                proc.prepareToPlay (44100.0, 512);
+            expectEquals (proc.getKitLoadsRequested(), 1,
+                          "same-rate re-prepares after a user load must not dispatch any auto-scan");
+
+            proc.releaseResources();
+            kitRoot.deleteRecursively();
+        }
+    }
+
+private:
+    // Writes a mono WAV of `numSamples` at DC = 1.0 to `file` (same fixture
+    // shape DrumSamplerTest uses).
+    void writeTestWav (const juce::File& file, int numSamples, double sr)
+    {
+        file.deleteFile();
+
+        juce::WavAudioFormat fmt;
+        std::unique_ptr<juce::OutputStream> os = file.createOutputStream();
+        if (os == nullptr)
+            return;
+
+        if (auto writer = fmt.createWriterFor (os,
+                juce::AudioFormatWriterOptions{}.withSampleRate (sr)
+                                                .withNumChannels (1)
+                                                .withBitsPerSample (16)))
+        {
+            juce::AudioBuffer<float> buf (1, numSamples);
+            for (int i = 0; i < numSamples; ++i)
+                buf.setSample (0, i, 1.0f);
+            writer->writeFromAudioSampleBuffer (buf, 0, numSamples);
+        }
+    }
+
+    // Creates <temp>/adk_proc_kit_XXXX/kick/kick.wav of `numSamples` at `sr`.
+    juce::File makeTempKitWithKick (int numSamples, double sr)
+    {
+        auto root = juce::File::createTempFile ("adk_proc_kit");
+        root.deleteFile();
+        root.createDirectory();
+
+        auto kickDir = root.getChildFile ("kick");
+        kickDir.createDirectory();
+
+        writeTestWav (kickDir.getChildFile ("kick.wav"), numSamples, sr);
+
+        return root;
     }
 };
 

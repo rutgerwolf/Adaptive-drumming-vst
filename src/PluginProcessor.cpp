@@ -87,7 +87,17 @@ AdaptiveDrummerProcessor::AdaptiveDrummerProcessor()
       apvts (*this, nullptr, "AdaptiveDrummer", createParameterLayout())
 {}
 
-AdaptiveDrummerProcessor::~AdaptiveDrummerProcessor() = default;
+AdaptiveDrummerProcessor::~AdaptiveDrummerProcessor()
+{
+    // Join (or cancel, if not yet started) any background kit load before the
+    // members it touches — drummer above all — are torn down. A load is
+    // bounded work (one directory scan + a handful of WAV reads), so give it
+    // a generous timeout to finish rather than rely on ThreadPool's own
+    // destructor, which only waits 5 s before stopThreads() forcibly kills
+    // the thread mid-load. (kitLoadPool is also declared last, so even its
+    // fallback teardown runs before drummer's.)
+    kitLoadPool.removeAllJobs (true, 30000);
+}
 
 // ── Bus layout ────────────────────────────────────────────────────────────────
 
@@ -323,14 +333,19 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
                     p->setValueNotifyingHost (p->convertTo0to1 (intensity01));
             }
 
-            // Re-load the kit this session was saved with. Threading the manifest
-            // through here too matters: without it, a session saved while pointed
-            // at a raw, unsorted Salamander download would silently fail to
-            // reload, since the remembered root has no per-voice subfolders for
-            // the old fallback scan to find.
+            // Re-load the kit this session was saved with — enqueued to the
+            // background pool (Step 17), not loaded inline: this callback runs
+            // on the host's message thread during session load, and a blocking
+            // directory scan + whole-WAV reads (+ resampling since Step 16)
+            // here stalls it. The manifest lookup happens inside the job for
+            // the same reason (it stats the filesystem); threading the
+            // manifest through still matters — without it, a session saved
+            // while pointed at a raw, unsorted Salamander download would
+            // silently fail to reload, since the remembered root has no
+            // per-voice subfolders for the fallback scan to find.
             const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();
             if (remembered.isNotEmpty())
-                drummer.loadSamples (juce::File (remembered), findShippedManifest());
+                enqueueKitLoad ({ juce::File (remembered) });
         }
 }
 
@@ -338,25 +353,63 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
 
 bool AdaptiveDrummerProcessor::loadSamples (const juce::File& samplesRoot)
 {
+    // Deliberately still synchronous (see the header): the user just picked a
+    // folder in the editor and expects an immediate loaded/failed answer, and
+    // tests that only need "a kit is loaded" get it deterministically here
+    // without pumping a message loop.
     const bool ok = drummer.loadSamples (samplesRoot, findShippedManifest());
     if (ok)
+    {
         apvts.state.setProperty (kSamplesPathId, samplesRoot.getFullPathName(), nullptr);
+
+        // The user has explicitly chosen a kit: that counts as "tried", so a
+        // later prepareToPlay at an unchanged rate never dispatches an
+        // unrelated auto-scan that could race over their choice. A genuine
+        // sample-rate change still reloads — through the remembered path just
+        // persisted above, i.e. this very kit.
+        triedAutoLoad = true;
+
+        // And drop any queued-but-not-started auto-load, so a stale request
+        // can't land on top of this explicit load. A job already mid-load can
+        // still finish and swap afterwards — that swap is race-free (the C1
+        // stress test in DrumSamplerTest.cpp pins it) and its first candidate
+        // was the previously remembered path, so the window where it could
+        // pick something else is the few milliseconds of an already-running
+        // scan.
+        const juce::ScopedLock sl (pendingKitLock);
+        pendingKitCandidates.clear();
+        hasPendingKitLoad = false;
+    }
     return ok;
 }
 
-// Resolve and load a kit off the audio thread, without forcing the user to
-// re-pick it every session: a folder remembered in saved state first, then
-// assets shipped next to the plugin binary or the host/standalone executable.
+// Resolve a kit without forcing the user to re-pick it every session: a folder
+// remembered in saved state first, then assets shipped next to the plugin
+// binary or the host/standalone executable. The scan-and-load itself runs on
+// the background pool (Step 17) — this method only decides and dispatches.
 // forceReload (set on an actual sample-rate change) bypasses the "already
 // loaded" early-out, since a kit resampled for the old rate must be reloaded
-// and re-resampled for the new one, not left as-is.
+// and re-resampled for the new one, not left as-is; it also bypasses the
+// triedAutoLoad latch, since the new rate is worth one fresh scan even when
+// the last one found nothing.
 void AdaptiveDrummerProcessor::autoLoadSamples (bool forceReload)
 {
     if (drummer.areSamplesLoaded() && ! forceReload)
         return;
 
+    // Nothing was found last time and nothing has changed: don't re-dispatch
+    // the same doomed scan on every prepareToPlay (pluginval and some hosts
+    // cycle prepare/release aggressively).
+    if (triedAutoLoad && ! forceReload)
+        return;
+    triedAutoLoad = true;
+
     juce::Array<juce::File> candidates;
 
+    // apvts wraps a ValueTree, which is not thread-safe: read the remembered
+    // path here, on the calling (message) thread, *before* enqueueing — the
+    // pool job never touches apvts (its success write-back is posted back to
+    // the message thread; see runKitLoadJob).
     const auto remembered = apvts.state.getProperty (kSamplesPathId).toString();
     if (remembered.isNotEmpty())
         candidates.add (juce::File (remembered));
@@ -367,13 +420,86 @@ void AdaptiveDrummerProcessor::autoLoadSamples (bool forceReload)
                             .getParentDirectory()
                             .getChildFile ("assets/samples/salamander"));
 
-    const auto manifest = findShippedManifest();
-    for (const auto& dir : candidates)
-        if (dir.isDirectory() && drummer.loadSamples (dir, manifest))
+    enqueueKitLoad (std::move (candidates));
+}
+
+void AdaptiveDrummerProcessor::enqueueKitLoad (juce::Array<juce::File> candidates)
+{
+    kitLoadsRequested.fetch_add (1);
+
+    {
+        const juce::ScopedLock sl (pendingKitLock);
+        pendingKitCandidates = std::move (candidates);
+        hasPendingKitLoad    = true;
+    }
+
+    bool expected = false;
+    if (kitLoadInFlight.compare_exchange_strong (expected, true))
+    {
+        // The WeakReference is created here, on the message thread: the job
+        // needs one for its callAsync write-back, and constructing the *first*
+        // WeakReference to an object lazily initialises its shared master
+        // state, which must not happen concurrently on the pool thread.
+        kitLoadPool.addJob ([this, weakThis = juce::WeakReference<AdaptiveDrummerProcessor> (this)]
+                            { runKitLoadJob (weakThis); });
+    }
+    // else: the running job drains pending requests before clearing
+    // kitLoadInFlight (under pendingKitLock — see runKitLoadJob), so the
+    // request published above is guaranteed to be consumed; no second job is
+    // ever queued while one is in flight.
+}
+
+void AdaptiveDrummerProcessor::runKitLoadJob (juce::WeakReference<AdaptiveDrummerProcessor> weakThis)
+{
+    // Pool thread. drummer.loadSamples() is safe to call from here while the
+    // audio thread renders: the sampler builds the new set without any lock
+    // held and swaps it in under a SpinLock the audio thread only try-locks
+    // (pinned by the C1 stress test in DrumSamplerTest.cpp). apvts is never
+    // touched from this thread.
+    for (;;)
+    {
+        juce::Array<juce::File> candidates;
         {
-            apvts.state.setProperty (kSamplesPathId, dir.getFullPathName(), nullptr);
-            return;
+            const juce::ScopedLock sl (pendingKitLock);
+            if (! hasPendingKitLoad)
+            {
+                // Clear the in-flight flag while still holding the lock: an
+                // enqueue either published its request before this check (we
+                // consume it on the next loop) or runs after the flag is
+                // cleared (its CAS dispatches a fresh job). No interleaving
+                // leaves a request pending with no job to run it.
+                kitLoadInFlight.store (false);
+                return;
+            }
+            candidates.swapWith (pendingKitCandidates);
+            hasPendingKitLoad = false;
         }
+
+        const auto manifest = findShippedManifest();
+        for (const auto& dir : candidates)
+        {
+            if (dir.isDirectory() && drummer.loadSamples (dir, manifest))
+            {
+                // Success-gated persistence, same rule as the old synchronous
+                // code: the path is only remembered after loadSamples()
+                // confirmed it — a failed load never leaves state pointing at
+                // a folder that never actually loaded. Posted to the message
+                // thread because apvts.state is a ValueTree (not thread-safe).
+                // WeakReference rather than `this`: the host can destroy the
+                // processor while this callback is still queued — the
+                // destructor joins this *job*, but can't unpost a message
+                // already in the queue. Plugin teardown happens on the message
+                // thread, so the liveness check can't race the destructor.
+                juce::MessageManager::callAsync (
+                    [weakThis, path = dir.getFullPathName()]
+                    {
+                        if (auto* proc = weakThis.get())
+                            proc->apvts.state.setProperty (kSamplesPathId, path, nullptr);
+                    });
+                break;
+            }
+        }
+    }
 }
 
 bool AdaptiveDrummerProcessor::areSamplesLoaded () const

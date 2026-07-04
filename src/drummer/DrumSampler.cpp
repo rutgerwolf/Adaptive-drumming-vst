@@ -14,7 +14,7 @@ DrumSampler::DrumSampler()
 
 void DrumSampler::prepare (double sampleRate)
 {
-    currentSampleRate = sampleRate;
+    currentSampleRate.store (sampleRate);
 }
 
 std::unordered_map<juce::String, juce::File> DrumSampler::buildFlatWavIndex (const juce::File& root)
@@ -212,9 +212,15 @@ bool DrumSampler::readWavInto (const juce::File& file, juce::AudioBuffer<float>&
     const int srcLen = static_cast<int> (reader->lengthInSamples);
     if (numCh <= 0 || srcLen <= 0) return false;
 
+    // One snapshot of the target rate for this whole file: prepare() may store
+    // a new rate concurrently (background loads, Step 17), and mixing two
+    // rates within one file's read would be worse than being one whole load
+    // behind (the processor re-enqueues a reload on every rate change anyway).
+    const double targetRate = currentSampleRate.load();
+
     // Same rate (the overwhelmingly common case): read straight through,
     // exactly as before resampling existed — no interpolation, no rounding.
-    if (reader->sampleRate <= 0.0 || juce::approximatelyEqual (reader->sampleRate, currentSampleRate))
+    if (reader->sampleRate <= 0.0 || juce::approximatelyEqual (reader->sampleRate, targetRate))
     {
         dest.setSize (numCh, srcLen);
         reader->read (&dest, 0, srcLen, 0, true, true);
@@ -229,7 +235,7 @@ bool DrumSampler::readWavInto (const juce::File& file, juce::AudioBuffer<float>&
     juce::AudioBuffer<float> raw (numCh, srcLen);
     reader->read (&raw, 0, srcLen, 0, true, true);
 
-    const double ratio   = reader->sampleRate / currentSampleRate;   // input samples per output sample
+    const double ratio   = reader->sampleRate / targetRate;   // input samples per output sample
     const int    destLen = juce::jmax (1, (int) std::llround ((double) srcLen / ratio));
     dest.setSize (numCh, destLen);
 

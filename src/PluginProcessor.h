@@ -64,8 +64,24 @@ public:
     void setStateInformation (const void* data, int sizeInBytes)    override;
 
     // ── Plugin API ─────────────────────────────────────────────────────────────
+    /** Synchronous load, called by the editor's "Load samples..." button (and
+        by tests that just need a kit loaded deterministically). The async
+        machinery below (Step 17) is only for lifecycle callbacks — this stays
+        a direct, blocking call whose return value means "loaded right now". */
     bool loadSamples      (const juce::File& samplesRoot);
     bool areSamplesLoaded () const;
+
+    /** True while a background kit-load job is queued or running (Step 17).
+        Introspection for tests; not needed by production callers. */
+    bool isKitLoadInFlight () const noexcept { return kitLoadInFlight.load(); }
+
+    /** How many background kit-load jobs have been requested so far (Step 17).
+        Test hook: pins that repeated prepareToPlay calls with no kit found
+        don't re-dispatch a scan every prepare. A counter (rather than a timing
+        proxy) because dispatching is deliberately cheap in both the correct
+        and the broken world — the work happens on the pool thread — so wall
+        clock can't distinguish "re-dispatched" from "didn't". */
+    int getKitLoadsRequested () const noexcept { return kitLoadsRequested.load(); }
 
     /** BPM currently in use (host-synced or manual). Readable from the editor. */
     double getCurrentBpm () const noexcept { return currentBpm.load (std::memory_order_relaxed); }
@@ -97,10 +113,25 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
-    /** forceReload bypasses the areSamplesLoaded() early-out — used when the
-        sample rate just changed, so a kit already loaded (and resampled) for
-        the old rate gets reloaded and resampled for the new one. */
+    /** Decides whether an automatic kit load is due and, if so, dispatches it
+        to the background pool (Step 17) — never loads inline. forceReload
+        bypasses both the areSamplesLoaded() early-out and the triedAutoLoad
+        one — used when the sample rate just changed, so a kit already loaded
+        (and resampled) for the old rate gets reloaded and resampled for the
+        new one. Call from the message thread only (reads apvts.state). */
     void autoLoadSamples (bool forceReload);
+
+    /** Publishes `candidates` as the pending kit-load request and makes sure a
+        pool job exists to consume it. Message thread only. If a job is already
+        in flight it drains the new request itself (see runKitLoadJob) — no
+        second job is ever dispatched while one is running. */
+    void enqueueKitLoad (juce::Array<juce::File> candidates);
+
+    /** The pool-thread job: drains pending candidate lists, trying each
+        directory with drummer.loadSamples() until one succeeds. Never touches
+        apvts from the pool thread — the success write-back is posted to the
+        message thread via callAsync, guarded by weakThis. */
+    void runKitLoadJob (juce::WeakReference<AdaptiveDrummerProcessor> weakThis);
 
     AdaptiveDrummer  drummer;
     EnergyAnalyzer   energyAnalyzer;
@@ -114,5 +145,25 @@ private:
 
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
 
+    // ── Async kit loading (Step 17) ────────────────────────────────────────────
+    // "Already scanned and found nothing" latch, so pluginval-style repeated
+    // prepareToPlay calls don't re-dispatch the same doomed scan every prepare.
+    // Also set by a successful explicit loadSamples(): the user's choice counts
+    // as "tried", so a later prepare never races an unrelated auto-scan over
+    // it (a genuine sample-rate change still reloads — via the remembered
+    // path, which is that very kit). Message thread only.
+    bool                    triedAutoLoad     { false };
+    std::atomic<bool>       kitLoadInFlight   { false };   // a pool job is queued/running
+    std::atomic<int>        kitLoadsRequested { 0 };       // see getKitLoadsRequested()
+    juce::CriticalSection   pendingKitLock;
+    juce::Array<juce::File> pendingKitCandidates;          // guarded by pendingKitLock
+    bool                    hasPendingKitLoad { false };   // guarded by pendingKitLock
+
+    // Declared after drummer (and last of the data members) so it is destroyed
+    // first — its jobs capture `this` and call into drummer. The destructor
+    // additionally joins jobs explicitly with a generous timeout; see there.
+    juce::ThreadPool        kitLoadPool { 1 };
+
+    JUCE_DECLARE_WEAK_REFERENCEABLE (AdaptiveDrummerProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdaptiveDrummerProcessor)
 };

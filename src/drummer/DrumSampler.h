@@ -22,9 +22,10 @@
  * Compatible with the Salamander Drumkit and similar sample packs.
  * Missing voices produce silence; playback continues for loaded voices.
  *
- * Thread-safety: loadSamples() builds a new sample set on the calling
- * (message) thread and swaps it in under a SpinLock that processBlock()
- * try-locks on the audio thread, so loading never races the audio callback.
+ * Thread-safety: loadSamples() builds a new sample set on the calling thread
+ * (the message thread, or — since Step 17 — the processor's background load
+ * pool) and swaps it in under a SpinLock that processBlock() try-locks on the
+ * audio thread, so loading never races the audio callback.
  * loadSamples() also resets voices[] (the playback cursors) under the same
  * lock, so processBlock() only needs to hold it around the two things that
  * touch that shared state — claiming a slot (triggerVoice) and reading
@@ -113,7 +114,9 @@ private:
     Voice          voices[kNumVoices][kSlotsPerVoice];   // guarded by sampleLock
 
     juce::AudioFormatManager formatManager;
-    double                   currentSampleRate { 44100.0 };
+    std::atomic<double>      currentSampleRate { 44100.0 };   // atomic: prepare() (message thread)
+                                                              // can race a background loadSamples()
+                                                              // reading it for resampling (Step 17)
     std::atomic<bool>        anyVoiceLoaded     { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrumSampler)
