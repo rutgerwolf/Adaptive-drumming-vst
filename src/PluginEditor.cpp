@@ -38,6 +38,12 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     // ── Groove XY pad (the 2-D groove axes) ──────────────────────────────────
     addAndMakeVisible (groovePad);
 
+    // ── New Seed (reshuffles ornaments/humanization only) ────────────────────
+    newSeedButton.setColour (juce::TextButton::buttonColourId,  kPanel);
+    newSeedButton.setColour (juce::TextButton::textColourOffId, kAccent);
+    newSeedButton.onClick = [this] { proc.randomizeGrooveSeed(); };
+    addAndMakeVisible (newSeedButton);
+
     // ── Follow toggle (adaptive density from the guide track) ────────────────
     followButton.setClickingTogglesState (true);
     followButton.setColour (juce::TextButton::buttonColourId,   kPanel);
@@ -214,6 +220,9 @@ void AdaptiveDrummerEditor::resized()
     rockButton      .setBounds (m,                   50, btnW, btnH);
     jazzButton      .setBounds (m + btnW + m,        50, btnW, btnH);
     electronicButton.setBounds (m + 2 * (btnW + m),  50, btnW, btnH);
+
+    // New Seed dice button — right of the GROOVE label, above the pad
+    newSeedButton.setBounds (W - m - 80, 90, 80, 18);
 
     // Groove XY pad  y=108-308 (replaces both slider rows with one square pad,
     // centred in the usable width; everything below shifts down 146px)

@@ -67,6 +67,13 @@ public:
         velocity-only, applied immediately like setIntensity(). */
     void setFollowAccent (float accent01, float depth01) noexcept;
 
+    /** The seed feeding the groove's stateless ornament/humanization hash
+        (see DrumPattern.h). Applied immediately, like setIntensity() — not
+        bar-latched: it's a hash input, not a structural change (which cells
+        fire is governed by complexity, never by the seed). */
+    void     setSeed (uint32_t newSeed) noexcept { drumPattern.setSeed (newSeed); }
+    uint32_t getSeed () const noexcept           { return drumPattern.getSeed(); }
+
     /** Choose the sound source: synthesised voices (no samples needed) or the
         WAV sampler. Switching resets the engine being switched *away from*,
         so its voices don't sit frozen mid-decay and resume audibly if the

@@ -673,6 +673,26 @@ public:
                                        "complexity must survive the round-trip");
         }
 
+        beginTest ("randomizeGrooveSeed changes the seed and survives a state round-trip");
+        {
+            AdaptiveDrummerProcessor proc;
+            const auto originalSeed = proc.getCurrentGrooveSeed();
+
+            proc.randomizeGrooveSeed();
+            const auto newSeed = proc.getCurrentGrooveSeed();
+            expect (newSeed != originalSeed, "randomizeGrooveSeed should change the seed "
+                                              "(vanishingly unlikely to collide)");
+            expect (proc.apvts.getParameter ("style") != nullptr, "sanity: apvts still intact");
+
+            juce::MemoryBlock savedState;
+            proc.getStateInformation (savedState);
+
+            AdaptiveDrummerProcessor fresh;
+            fresh.setStateInformation (savedState.getData(), (int) savedState.getSize());
+            expectEquals ((int) fresh.getCurrentGrooveSeed(), (int) newSeed,
+                          "seed must survive the round-trip");
+        }
+
         beginTest ("pre-GrooveTable (v1) session migrates its density into intensity/complexity");
         {
             // Build a v1-shaped state: a real saved session, but with the

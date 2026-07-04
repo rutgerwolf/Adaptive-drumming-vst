@@ -71,6 +71,14 @@ public:
     bool loadSamples      (const juce::File& samplesRoot);
     bool areSamplesLoaded () const;
 
+    /** Picks a new random groove seed (the "New Seed" dice button), persists
+        it into state, and applies it immediately — a fresh set of ornament/
+        humanization variations without changing style, complexity, or which
+        cells fire. Non-automatable by design (not an AudioParameter): this is
+        a "reshuffle", not a value a host would want to ramp/automate. */
+    void     randomizeGrooveSeed();
+    uint32_t getCurrentGrooveSeed() const noexcept { return currentGrooveSeed.load (std::memory_order_relaxed); }
+
     /** True while a background kit-load job is queued or running (Step 17).
         Introspection for tests; not needed by production callers. */
     bool isKitLoadInFlight () const noexcept { return kitLoadInFlight.load(); }
@@ -142,6 +150,13 @@ private:
     std::atomic<float>  currentComplexityState { 0.55f };   // mask-equivalent to legacy Medium
     std::atomic<float>  currentIntensityState  { 0.55f };
     std::atomic<bool>   guideAvailableState    { false };
+
+    // Groove seed (ornament/humanization hash input — see AdaptiveDrummer::setSeed).
+    // Not an AudioParameter: a "reshuffle" trigger, not something a host should
+    // automate/ramp. Persisted as a plain state-tree property (like
+    // kSamplesPathId) so getStateInformation()/setStateInformation() carry it
+    // across sessions for free (apvts.copyState()/replaceState() include it).
+    std::atomic<uint32_t> currentGrooveSeed { DrumPattern::kDefaultGrooveSeed };
 
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> volumeSmoothed;
 
