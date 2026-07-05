@@ -31,6 +31,7 @@ juce_add_plugin(AdaptiveDrummer
 target_sources(AdaptiveDrummer PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
+    src/PresetIO.cpp
     src/XYPad.cpp
     src/GrooveGrid.cpp
     src/drummer/DrumPattern.cpp
@@ -118,6 +119,7 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         tests/AdaptiveDrummerProcessorTest.cpp
         tests/TapTempoTest.cpp
         tests/TableExchangeTest.cpp
+        tests/PresetIOTest.cpp
         src/drummer/DrumPattern.cpp
         src/drummer/DrumSampler.cpp
         src/drummer/DrumSynth.cpp
@@ -125,6 +127,7 @@ if(ADAPTIVE_DRUMMER_BUILD_TESTS)
         src/drummer/AdaptiveDrummer.cpp
         src/PluginProcessor.cpp
         src/PluginEditor.cpp
+        src/PresetIO.cpp
         src/XYPad.cpp
         src/GrooveGrid.cpp
     )

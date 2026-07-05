@@ -81,6 +81,12 @@ public:
         cells fire. Non-automatable by design (not an AudioParameter): this is
         a "reshuffle", not a value a host would want to ramp/automate. */
     void     randomizeGrooveSeed();
+
+    /** Applies a specific groove seed (preset import) — the deterministic
+        sibling of randomizeGrooveSeed(): same persist + immediate apply, but
+        with a caller-chosen value. Message thread only. */
+    void     setGrooveSeed (uint32_t newSeed);
+
     uint32_t getCurrentGrooveSeed() const noexcept { return currentGrooveSeed.load (std::memory_order_relaxed); }
 
     // ── Per-voice mutes (a TableExchange producer input) ──────────────────────
@@ -129,6 +135,40 @@ public:
         plain style + mutes (the editor's "Clear Grid" button). No-op when no
         custom grid is active. Message thread only. */
     void clearCustomGrid();
+
+    /** Bulk-replaces the whole custom grid in one go (preset / MIDI import):
+        one persist + one publish, instead of 96 setGridCell() round-trips
+        each churning the mailbox producer. The caller owns the table's
+        content (including swing/styleSalt). Message thread only. */
+    void setCustomGrid (const GrooveTable& table);
+
+    // ── User-facing preset files (.adpreset JSON) + MIDI groove import ────────
+    // A separate, shareable, human-readable format — NOT the internal
+    // gridData/base64 session-state blob (see PresetIO.h for the distinction).
+
+    /** Serializes the current user *setting* — the raw apvts style/intensity/
+        complexity (not the Follow-modulated effective readouts), mute mask,
+        groove seed, and the custom grid if one is active. Message thread. */
+    juce::String createPresetJson (const juce::String& presetName) const;
+
+    /** Parses + validates a preset JSON and applies it: style/intensity/
+        complexity via the apvts parameters, mutes, seed, and the custom grid
+        (or clears any existing one when the preset carries none — a preset is
+        the full "sound"). Validate-first: a corrupt/unknown-version file
+        returns false and applies NOTHING. Message thread only. */
+    bool applyPresetJson (const juce::String& jsonText);
+
+    /** File wrappers around the two above (the editor's Export/Import
+        buttons). Export names the preset after the file's basename. */
+    bool exportPreset (const juce::File& file);
+    bool importPreset (const juce::File& file);
+
+    /** Imports the first populated bar of a Standard MIDI File as the custom
+        grid (see PresetIO::grooveTableFromMidiFile for the quantization/GM
+        mapping rules). The result is editable exactly like a hand-drawn
+        pattern. Returns false on an unreadable file or one with no mappable
+        percussion notes. Message thread only. */
+    bool importMidiGroove (const juce::File& midiFile);
 
     /** The unified TableExchange producer routine (message thread ONLY — this
         is the mailbox's single producer): rebuilds the currently-intended

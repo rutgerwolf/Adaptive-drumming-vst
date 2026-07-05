@@ -31,6 +31,9 @@ private:
     void timerCallback    () override;
     void updateFromProcessor ();
     void openSampleFolder ();
+    void exportPresetFile ();
+    void importPresetFile ();
+    void importMidiFile   ();
 
     AdaptiveDrummerProcessor& proc;
 
@@ -103,6 +106,15 @@ private:
     juce::Slider volumeSlider;
     juce::Label  volumeTitleLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> volumeAttachment;
+
+    // Preset export/import (.adpreset JSON — the shareable "sound") and MIDI
+    // groove import (a Standard MIDI File's first bar, quantized onto the
+    // grid as a custom pattern). Each uses the same async FileChooser idiom
+    // as loadSamplesButton/openSampleFolder(); failures alert like the
+    // samples "not found" path (see AdaptiveDrummerProcessor's preset API).
+    juce::TextButton exportPresetButton { "Export..." };
+    juce::TextButton importPresetButton { "Import..." };
+    juce::TextButton importMidiButton   { "Import MIDI..." };
 
     // Samples
     juce::TextButton loadSamplesButton  { "Load samples..." };
