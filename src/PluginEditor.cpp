@@ -15,7 +15,7 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
       groovePad (*p.apvts.getParameter ("complexity"), *p.apvts.getParameter ("intensity"),
                  "COMPLEXITY", "INTENSITY")
 {
-    setSize (420, 824);   // +156px vs. v5: the GROOVE GRID row (roadmap Step 19)
+    setSize (420, 858);   // +34px vs. v6: the PRESET row (export/import + MIDI import)
 
     // ── Style buttons ──────────────────────────────────────────────────────────
     for (auto* btn : { &rockButton, &jazzButton, &electronicButton })
@@ -178,6 +178,22 @@ AdaptiveDrummerEditor::AdaptiveDrummerEditor (AdaptiveDrummerProcessor& p)
     volumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         proc.apvts, "volume", volumeSlider);
 
+    // ── Presets + MIDI groove import (same accent-text idiom as Load samples) ─
+    exportPresetButton.setColour (juce::TextButton::buttonColourId,  kPanel);
+    exportPresetButton.setColour (juce::TextButton::textColourOffId, kAccent);
+    exportPresetButton.onClick = [this] { exportPresetFile(); };
+    addAndMakeVisible (exportPresetButton);
+
+    importPresetButton.setColour (juce::TextButton::buttonColourId,  kPanel);
+    importPresetButton.setColour (juce::TextButton::textColourOffId, kAccent);
+    importPresetButton.onClick = [this] { importPresetFile(); };
+    addAndMakeVisible (importPresetButton);
+
+    importMidiButton.setColour (juce::TextButton::buttonColourId,  kPanel);
+    importMidiButton.setColour (juce::TextButton::textColourOffId, kAccent);
+    importMidiButton.onClick = [this] { importMidiFile(); };
+    addAndMakeVisible (importMidiButton);
+
     // ── Samples ────────────────────────────────────────────────────────────────
     samplesStatusLabel.setFont (juce::Font (11.0f));
     samplesStatusLabel.setColour (juce::Label::textColourId, kMuted);
@@ -220,6 +236,7 @@ void AdaptiveDrummerEditor::paint (juce::Graphics& g)
     g.drawText ("SOUND",   12, 434, 60, 12, juce::Justification::left);
     g.drawText ("MUTES",   12, 486, 60, 12, juce::Justification::left);
     g.drawText ("GRID",    12, 534, 60, 12, juce::Justification::left);
+    g.drawText ("PRESET",  12, 764, 60, 12, juce::Justification::left);
 
     // Guide-energy meter
     g.setColour (kPanel);
@@ -304,9 +321,15 @@ void AdaptiveDrummerEditor::resized()
     volumeTitleLabel.setBounds (W - m - 60 - 14, 706, 30, 14);
     volumeSlider    .setBounds (W - m - 60,       694, 60, 60);
 
-    // Samples (bottom)
-    loadSamplesButton  .setBounds (m,        784, 120, 24);
-    samplesStatusLabel .setBounds (m + 128,  786, W - 140, 20);
+    // Preset row  y=780 (new: preset export/import + MIDI groove import,
+    // three across like the style row)
+    exportPresetButton.setBounds (m,                  780, btnW, 24);
+    importPresetButton.setBounds (m + btnW + m,       780, btnW, 24);
+    importMidiButton  .setBounds (m + 2 * (btnW + m), 780, btnW, 24);
+
+    // Samples (bottom; shifted down 34px vs. v6 for the preset row)
+    loadSamplesButton  .setBounds (m,        818, 120, 24);
+    samplesStatusLabel .setBounds (m + 128,  820, W - 140, 20);
 }
 
 // ── Timer ─────────────────────────────────────────────────────────────────────
@@ -419,6 +442,91 @@ void AdaptiveDrummerEditor::handleTapTempo()
         p->setValueNotifyingHost (range.convertTo0to1 (v));
         tapResultLabel.setText ("-> " + juce::String (v, 1), juce::dontSendNotification);
     }
+}
+
+// ── Preset export/import + MIDI groove import dialogs ─────────────────────────
+// Same async FileChooser idiom as openSampleFolder() below; failures use the
+// same AlertWindow convention as the samples "not found" path.
+
+void AdaptiveDrummerEditor::exportPresetFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Export preset",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+            .getChildFile ("groove.adpreset"),
+        "*.adpreset");
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::saveMode |
+        juce::FileBrowserComponent::canSelectFiles |
+        juce::FileBrowserComponent::warnAboutOverwriting,
+        [this] (const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File()) return;
+
+            if (file.getFileExtension().isEmpty())
+                file = file.withFileExtension (".adpreset");
+
+            if (! proc.exportPreset (file))
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Export failed",
+                    "Could not write the preset file:\n" + file.getFullPathName());
+        });
+}
+
+void AdaptiveDrummerEditor::importPresetFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Import preset",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.adpreset;*.json");
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::openMode |
+        juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto results = fc.getResults();
+            if (results.isEmpty()) return;
+
+            if (! proc.importPreset (results[0]))
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Preset not loaded",
+                    "The selected file is not a valid Adaptive Drummer preset "
+                    "(corrupt JSON, or a newer preset format than this version "
+                    "understands). Nothing was changed.");
+        });
+}
+
+void AdaptiveDrummerEditor::importMidiFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Import MIDI groove",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.mid;*.midi");
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::openMode |
+        juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto results = fc.getResults();
+            if (results.isEmpty()) return;
+
+            if (! proc.importMidiGroove (results[0]))
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::MessageBoxIconType::WarningIcon,
+                    "MIDI groove not imported",
+                    "Could not import a groove from the selected file.\n\n"
+                    "It must be a Standard MIDI File (.mid) containing drum "
+                    "notes — GM percussion on channel 10 (kick 35/36, snare "
+                    "38/40, hi-hat 42/44/46, ...), or any channel if none use "
+                    "channel 10. The first bar containing drum hits is "
+                    "imported onto the grid.");
+        });
 }
 
 // ── Sample folder dialog ──────────────────────────────────────────────────────

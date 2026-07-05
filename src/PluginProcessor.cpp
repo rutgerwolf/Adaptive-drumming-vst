@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "PresetIO.h"
 
 #include <cstring>
 #include <type_traits>
@@ -490,7 +491,11 @@ void AdaptiveDrummerProcessor::setStateInformation (const void* data, int sizeIn
 
 void AdaptiveDrummerProcessor::randomizeGrooveSeed()
 {
-    const auto newSeed = static_cast<uint32_t> (juce::Random::getSystemRandom().nextInt64());
+    setGrooveSeed (static_cast<uint32_t> (juce::Random::getSystemRandom().nextInt64()));
+}
+
+void AdaptiveDrummerProcessor::setGrooveSeed (uint32_t newSeed)
+{
     currentGrooveSeed.store (newSeed, std::memory_order_relaxed);
     apvts.state.setProperty (kGrooveSeedId, static_cast<int> (newSeed), nullptr);
     drummer.setSeed (newSeed);
@@ -581,6 +586,116 @@ void AdaptiveDrummerProcessor::clearCustomGrid()
     // style + mutes can supersede it — releaseActive() is consumer-side and
     // unreachable from here.
     publishDynamicTableIfNeeded();
+}
+
+void AdaptiveDrummerProcessor::setCustomGrid (const GrooveTable& table)
+{
+    customGrid       = table;
+    customGridActive = true;
+    ++gridRevision;
+    persistGridToState();
+    publishDynamicTableIfNeeded();   // message thread — lands at the next bar wrap
+}
+
+// ── User-facing preset files + MIDI groove import ─────────────────────────────
+
+juce::String AdaptiveDrummerProcessor::createPresetJson (const juce::String& presetName) const
+{
+    PresetIO::Preset p;
+    p.name       = presetName;
+    p.style      = static_cast<DrumPattern::Style> (
+                       static_cast<int> (*apvts.getRawParameterValue ("style")));
+    // The BASE axis values (the user's setting), never the Follow-modulated
+    // effective readouts (getCurrentIntensity/Complexity) — a preset captures
+    // what the user dialled in, not a transient guide-driven blend.
+    p.intensity  = *apvts.getRawParameterValue ("intensity");
+    p.complexity = *apvts.getRawParameterValue ("complexity");
+    p.grooveSeed = getCurrentGrooveSeed();
+    p.muteMask   = getMuteMask();
+
+    p.hasCustomGrid = customGridActive;
+    if (customGridActive)
+        p.customGrid = customGrid;
+
+    return PresetIO::toJson (p);
+}
+
+bool AdaptiveDrummerProcessor::applyPresetJson (const juce::String& jsonText)
+{
+    // Validate everything first: a corrupt/unknown-version file must apply
+    // NOTHING (fromJson only writes its output when the whole document is
+    // sound — same posture as the gridVersion check in setStateInformation).
+    PresetIO::Preset p;
+    if (! PresetIO::fromJson (jsonText, p))
+        return false;
+
+    const int styleIdx = static_cast<int> (p.style);
+    if (auto* param = apvts.getParameter ("style"))
+        param->setValueNotifyingHost (param->convertTo0to1 (static_cast<float> (styleIdx)));
+
+    // The producer's edge detector reads any style-parameter change as "the
+    // user picked a style" and would discard the custom grid installed below
+    // (decision A). A preset load is one atomic operation, not a style pick
+    // on top of a drawing — sync the baseline so the imported grid survives.
+    lastSeenStyleIdx = styleIdx;
+
+    if (auto* param = apvts.getParameter ("intensity"))
+        param->setValueNotifyingHost (param->convertTo0to1 (p.intensity));
+    if (auto* param = apvts.getParameter ("complexity"))
+        param->setValueNotifyingHost (param->convertTo0to1 (p.complexity));
+
+    setGrooveSeed (p.grooveSeed);
+
+    // Whole-mask apply (not six setVoiceMuted() calls): one state write, and
+    // the single publish below covers it.
+    muteMask.store (static_cast<uint8_t> (p.muteMask & 0x3F), std::memory_order_relaxed);
+    apvts.state.setProperty (kMuteMaskId, static_cast<int> (p.muteMask & 0x3F), nullptr);
+
+    // The grid: install the preset's, or clear any existing one — a preset is
+    // the full "sound", so a gridless preset means "the style's own pattern".
+    customGridActive = p.hasCustomGrid;
+    if (p.hasCustomGrid)
+    {
+        customGrid = p.customGrid;
+        // styleSalt is never serialized (an internal hash-decorrelation
+        // constant, meaningless in a shared file): re-salt from the preset's
+        // style, exactly what a hand-drawn grid copies from its style table.
+        customGrid.styleSalt = DrumPattern::getStyleTable (p.style).styleSalt;
+    }
+    ++gridRevision;
+    persistGridToState();
+    publishDynamicTableIfNeeded();
+    return true;
+}
+
+bool AdaptiveDrummerProcessor::exportPreset (const juce::File& file)
+{
+    return file.replaceWithText (createPresetJson (file.getFileNameWithoutExtension()));
+}
+
+bool AdaptiveDrummerProcessor::importPreset (const juce::File& file)
+{
+    if (! file.existsAsFile())
+        return false;
+    return applyPresetJson (file.loadFileAsString());
+}
+
+bool AdaptiveDrummerProcessor::importMidiGroove (const juce::File& midiFile)
+{
+    GrooveTable table;
+    if (! PresetIO::grooveTableFromMidiFile (midiFile, table))
+        return false;
+
+    // Salt from the target style's built-in table — the same salt a hand-drawn
+    // grid starts with — so the import behaves exactly like a drawn pattern
+    // (the salt is inert anyway while every imported cell is deterministic).
+    // swing stays 0: the notes' real (possibly swung) positions were already
+    // quantized to the straight 16th grid.
+    table.styleSalt = DrumPattern::getStyleTable (static_cast<DrumPattern::Style> (
+                          static_cast<int> (*apvts.getRawParameterValue ("style")))).styleSalt;
+
+    setCustomGrid (table);
+    return true;
 }
 
 void AdaptiveDrummerProcessor::persistGridToState()
