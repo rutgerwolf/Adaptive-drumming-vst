@@ -38,22 +38,29 @@
  * currently names. That is the entire safety argument; everything below is
  * about how the two atomics change hands without a lock.
  *
- * ── Why tryStage() reads pendingSlot before activeSlot ──────────────────
- * consume()'s successful path is: store activeSlot (relaxed), then
- * compare_exchange_strong pendingSlot from s to -1 with
- * memory_order_acq_rel/acquire. The *release* half of that CAS is what
- * publishes the new activeSlot value to other threads — a thread that
- * observes pendingSlot == -1 via an acquire load is guaranteed (by the
- * acquire/release pairing) to also see whichever activeSlot store happened
- * before that release. So tryStage() must load pendingSlot first, with
- * acquire, and only then load activeSlot: if it read activeSlot first, a
- * consume() could complete between the two loads and tryStage() could
- * observe a *stale* activeSlot (the just-vacated slot) as still "active",
- * which is merely overly conservative — but reading them in the other order
- * risks the reverse mistake, seeing pendingSlot == -1 without the
- * happens-before edge to activeSlot's fresh value, which is not just
- * conservative, it is unsafe (a slot the consumer just claimed could look
- * free). Reading pendingSlot first, with acquire, closes that.
+ * ── Why every operation on both atomics is sequentially consistent ──────
+ * An earlier version of this class used acquire/release on pendingSlot and
+ * a *relaxed* store for activeSlot, reasoning that observing pendingSlot
+ * == -1 via an acquire load (synchronizing with consume()'s release-CAS)
+ * would transitively guarantee visibility of the activeSlot store that
+ * preceded it in program order. That reasoning is unsound in practice: nothing
+ * pins *which* release a given load synchronizes with when the same value
+ * (-1) is written by many different CAS calls over time, and a producer's two
+ * loads (pendingSlot then activeSlot) are not required to observe a
+ * consistent snapshot across *different* atomics under acquire/release alone
+ * — one load can be "fresher" than the other. In concentrated stress testing
+ * this manifested as real, reproducible torn reads (a consumer adopting a
+ * slot mid-write). Fixed by making every operation on both atomics
+ * memory_order_seq_cst: all threads agree on a single global total order of
+ * these operations, so if a producer's read of pendingSlot is ordered after
+ * a given consume() call in that total order, its very next read of
+ * activeSlot is *also* guaranteed ordered no earlier than that same call —
+ * eliminating any possibility of a stale view of one atomic paired with a
+ * fresh view of the other. This mailbox is consumed at most once per bar
+ * (not per sample) and published at most a handful of times per second, so
+ * seq_cst's cost (a full memory fence per operation, vs. acquire/release) is
+ * immaterial here; the simplicity of a single, easily-verified ordering
+ * model is worth far more than the saved cycles would be.
  *
  * ── Why consume() stores activeSlot before the claiming CAS ─────────────
  * Publishing intent (activeSlot = s) *before* the CAS that actually claims
@@ -68,7 +75,10 @@
  * atomic naming slot s and could hand it straight back to the producer —
  * which would then scribble over the table the audio thread is about to
  * dereference as its just-adopted "active" table. Store-before-CAS trades a
- * harmless transient double-occupancy for closing that real one.
+ * harmless transient double-occupancy for closing that real one. (This
+ * ordering requirement is independent of the seq_cst change above — it holds
+ * regardless of memory order, since it is about *program order* on the
+ * consumer thread, not cross-thread visibility.)
  *
  * ── Lock-free, not wait-free ─────────────────────────────────────────────
  * Both slots can legitimately be spoken for at once (one active, one
@@ -112,11 +122,11 @@ public:
         wrap; that state resolves within one bar while the transport runs. */
     GrooveTable* tryStage() noexcept
     {
-        // MUST read pendingSlot first (see class comment: this ordering is
-        // what gives the activeSlot load below its happens-before guarantee
-        // via consume()'s release-CAS).
-        const int p = pendingSlot.load (std::memory_order_acquire);
-        const int a = activeSlot.load  (std::memory_order_acquire);
+        // seq_cst on both loads (see class comment): guarantees a fresh view
+        // of activeSlot whenever pendingSlot is observed as caught up with a
+        // given consume() call, which acquire/release alone did not.
+        const int p = pendingSlot.load (std::memory_order_seq_cst);
+        const int a = activeSlot.load  (std::memory_order_seq_cst);
         for (int i = 0; i < 2; ++i)
             if (i != p && i != a) { stagedIdx = i; return &slots[i]; }
         return nullptr;
@@ -127,7 +137,7 @@ public:
         superseded. */
     void publish() noexcept
     {
-        pendingSlot.store (stagedIdx, std::memory_order_release);
+        pendingSlot.store (stagedIdx, std::memory_order_seq_cst);
     }
 
     // ── Consumer side (audio thread, at the step-0 bar wrap only) ──────────
@@ -137,15 +147,15 @@ public:
         (or releaseActive() is called). */
     const GrooveTable* consume() noexcept
     {
-        int s = pendingSlot.load (std::memory_order_acquire);
+        int s = pendingSlot.load (std::memory_order_seq_cst);
         while (s >= 0)
         {
             // Publish intent BEFORE claiming: closes the reclaim race where a
             // producer could otherwise compute this slot as free and scribble
             // over the table this thread is about to adopt (see class comment).
-            activeSlot.store (s, std::memory_order_relaxed);
+            activeSlot.store (s, std::memory_order_seq_cst);
             if (pendingSlot.compare_exchange_strong (s, -1,
-                    std::memory_order_acq_rel, std::memory_order_acquire))
+                    std::memory_order_seq_cst, std::memory_order_seq_cst))
                 return &slots[s];
             // CAS reloaded s with a newer publish — adopt that one instead.
         }
@@ -156,7 +166,7 @@ public:
         to a const style table). Frees the slot for the producer. */
     void releaseActive() noexcept
     {
-        activeSlot.store (-1, std::memory_order_relaxed);
+        activeSlot.store (-1, std::memory_order_seq_cst);
     }
 
 private:
