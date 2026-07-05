@@ -6,11 +6,11 @@
 /**
  * EnergyAnalyzer — turns an incoming guide signal into a smoothed 0..1
  * "energy" value plus two Follow-modulation signals, both consumed by
- * PluginProcessor's Follow seam (never by DrumPattern's complexity/structural
- * path, which Follow does not touch — see DrumPattern.h):
+ * PluginProcessor's Follow seam:
  *
  *   - macro energy: a slower envelope of the same signal (the phrase-level
- *     loudness contour), used to modulate the *base* intensity up/down.
+ *     loudness contour), used to modulate the *base* intensity AND the *base*
+ *     complexity up/down together (see the Follow seam in processBlock()).
  *   - accent: how far the fast envelope currently pokes above that slower
  *     contour — a transient/emphasis signal, used to modulate per-hit
  *     velocity at step boundaries.

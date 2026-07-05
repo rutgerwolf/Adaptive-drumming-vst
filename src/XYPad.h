@@ -17,9 +17,10 @@
  * not tied to any one caller's feature.
  *
  * Follow overlay: the pad stays fully draggable while Follow is on (the grid
- * remains authoritative -- see DrumPattern's class comment), so Follow's
- * modulation is drawn as an overlay ring on top of the normal puck, not by
- * hijacking the puck's position or disabling the pad. See setFollowOverlay().
+ * remains authoritative -- Follow's blends are bounded around the puck's
+ * values, see DrumPattern's class comment), so Follow's two-axis modulation
+ * is drawn as an overlay ring on top of the normal puck, not by hijacking
+ * the puck's position or disabling the pad. See setFollowOverlay().
  */
 class XYPad : public juce::Component
 {
@@ -37,12 +38,13 @@ public:
     void mouseUp            (const juce::MouseEvent&) override;
     void mouseDoubleClick   (const juce::MouseEvent&) override;   // reset both axes to default
 
-    /** Shows/hides the Follow overlay: a hollow ring at the puck's X (complexity
-        is never modulated by Follow) but at intensityEff01's Y, connected to
-        the actual puck by a thin line, pulsing with accent01. Purely visual --
-        never touches the bound parameters. Call with active=false (the
-        default) when Follow is off or has no guide to modulate with. */
-    void setFollowOverlay (bool active, float intensityEff01, float accent01);
+    /** Shows/hides the Follow overlay: a hollow ring at the *effective*
+        (Follow-modulated) position — complexityEff01 on X, intensityEff01 on
+        Y — connected to the actual puck by a thin line, pulsing with
+        accent01. Purely visual -- never touches the bound parameters. Call
+        with active=false (the default) when Follow is off or has no guide to
+        modulate with. */
+    void setFollowOverlay (bool active, float complexityEff01, float intensityEff01, float accent01);
 
 private:
     juce::Rectangle<float> getPadArea() const;
@@ -63,6 +65,7 @@ private:
                                       // if Follow toggles on mid-drag
 
     bool  followOverlayActive { false };
+    float followComplexity01  { 0.5f };   // X position of the overlay ring
     float followIntensity01   { 0.5f };   // Y position of the overlay ring
     float followAccent01      { 0.0f };   // 0..1, drives the ring's pulse
 

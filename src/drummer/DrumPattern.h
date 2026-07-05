@@ -24,10 +24,15 @@
  * layer masks exactly. (Host-visible intensity/complexity parameters arrive
  * in a later roadmap step; until then setDensity() is the only driver.)
  *
- * Follow (guide-track modulation, see PluginProcessor) never calls
- * setComplexity() — complexity is always the manual/grid value. Follow's only
- * hook is setFollowAccent(), a velocity-only term in stepVelocity() gated by
- * kFlagAccent/kFlagGhost, so it can never change which cells fire.
+ * Follow (guide-track modulation, see PluginProcessor) drives both axes: it
+ * calls setComplexity() and setIntensity() every block with bounded,
+ * grid-anchored blends toward the guide's energy, so a loud guide makes the
+ * groove both louder and busier (more cells pass the complexityThreshold
+ * gate — GarageBand Drummer's "ghost notes join in with loudness"
+ * behaviour). Density changes ONLY through that ordinary complexity gate;
+ * Follow's other hook, setFollowAccent(), is a velocity-only term in
+ * stepVelocity() gated by kFlagAccent/kFlagGhost and never changes which
+ * cells fire.
  *
  * RT-safety: all tables are const file-scope data; loadStyle() only re-points
  * a pointer. stepFires()/stepVelocity() are pure arithmetic per trigger — no
@@ -143,8 +148,9 @@ public:
         kFlagGhost — a lean, not a full hit (see setFollowAccent). */
     static constexpr float kAccentWeightRegular = 0.4f;
 
-    /** Follow's guide-accent modulation (velocity-only; never touches which
-        cells fire — see the class comment). accent01 is EnergyAnalyzer's
+    /** Follow's guide-accent modulation (velocity-only; this term never
+        touches which cells fire — Follow reaches density only through
+        setComplexity(), see the class comment). accent01 is EnergyAnalyzer's
         accent signal; depth01 (0 disables, the default) scales its effect.
         Applied immediately, like setIntensity() — not bar-latched, since
         this is non-structural. */

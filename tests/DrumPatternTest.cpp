@@ -372,7 +372,8 @@ public:
             }
         }
 
-        beginTest ("Follow accent — never changes which cells fire (the hard constraint)");
+        beginTest ("Follow accent — the velocity-only term never changes which cells fire "
+                   "(Follow reaches density only through setComplexity)");
         {
             for (auto style : allStyles)
                 for (float c : { 0.2f, 0.55f, 1.0f })
