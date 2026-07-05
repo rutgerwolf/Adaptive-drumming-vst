@@ -91,3 +91,17 @@ jobs:
           $pv = (Get-ChildItem -Recurse pluginval_dir -Filter pluginval.exe | Select-Object -First 1).FullName
           & $pv --strictness-level 10 --random-seed 1 --validate-in-process --skip-gui-tests --validate "build/$env:VST3_REL"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Downloadable build for manual installs (TODO Phase A: no release
+      # process exists yet, so a workflow artifact is the interim path — see
+      # docs/TODO.md). VST3 for DAW use, Standalone .exe for a quick
+      # no-DAW smoke test. 30-day retention: this is a rolling "latest build"
+      # convenience, not a versioned release artifact.
+      - name: Upload Windows build (VST3 + Standalone)
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdaptiveDrummer-Windows
+          path: |
+            build/AdaptiveDrummer_artefacts/Release/VST3/Adaptive Drummer.vst3
+            build/AdaptiveDrummer_artefacts/Release/Standalone/Adaptive Drummer.exe
+          retention-days: 30
