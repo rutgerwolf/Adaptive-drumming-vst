@@ -205,6 +205,150 @@ public:
             expect (snareEverFired, "Jazz snare comping must fire at least once over 8 bars at Full complexity");
         }
 
+        beginTest ("fills — kFlagFillOnly cells fire only on the last bar of each kFillEvery-bar phrase");
+        {
+            for (auto style : allStyles)
+            {
+                DrumPattern p;
+                p.loadStyle (style);
+                p.setComplexity (1.0f);   // every authored fill threshold in range
+                p.setIntensity  (0.6f);
+
+                int fillCellsFound = 0;
+                for (int v = 0; v < kVoices; ++v)
+                    for (int s = 0; s < DrumPattern::kSteps; ++s)
+                    {
+                        const auto& cell = p.getActiveTable().cells[v][s];
+                        if (cell.velHigh == 0 || (cell.flags & StepCell::kFlagFillOnly) == 0)
+                            continue;
+
+                        ++fillCellsFound;
+                        for (uint32_t bar = 0; bar < 4 * DrumPattern::kFillEvery; ++bar)
+                        {
+                            const bool fillBar =
+                                bar % DrumPattern::kFillEvery == DrumPattern::kFillEvery - 1;
+
+                            if (! fillBar)
+                                expect (! p.stepFires (v, s, bar),
+                                        styleName (style) + ": fill cell must never fire outside its "
+                                        "fill bar (voice " + juce::String (v) + ", step "
+                                        + juce::String (s) + ", bar " + juce::String ((int) bar) + ")");
+                            else if (cell.probability == 255)
+                                expect (p.stepFires (v, s, bar),
+                                        styleName (style) + ": deterministic fill cell must fire on "
+                                        "its fill bar (voice " + juce::String (v) + ", step "
+                                        + juce::String (s) + ", bar " + juce::String ((int) bar) + ")");
+                        }
+                    }
+
+                expect (fillCellsFound > 0,
+                        styleName (style) + " must author at least one fill cell");
+            }
+        }
+
+        beginTest ("fills — non-fill cells are provably unperturbed on fill bars");
+        {
+            for (auto style : allStyles)
+            {
+                // Deterministic (probability-255) non-fill cells must fire
+                // identically on EVERY bar — fill bars included. Together with
+                // the mask-equivalence golden test (which pins their exact
+                // placement at bar 0), this proves the fill layer left the
+                // backbone untouched on all bars.
+                for (auto d : allDensities)
+                {
+                    DrumPattern p;
+                    p.loadStyle  (style);
+                    p.setDensity (d);
+
+                    for (int v = 0; v < kVoices; ++v)
+                        for (int s = 0; s < DrumPattern::kSteps; ++s)
+                        {
+                            const auto& cell = p.getActiveTable().cells[v][s];
+                            if (cell.probability != 255
+                                || (cell.flags & StepCell::kFlagFillOnly) != 0)
+                                continue;
+
+                            const bool bar0 = p.stepFires (v, s, 0);
+                            for (uint32_t bar = 1; bar < 4 * DrumPattern::kFillEvery; ++bar)
+                                expect (p.stepFires (v, s, bar) == bar0,
+                                        styleName (style) + "/" + densityName (d)
+                                        + ": non-fill backbone must be bar-independent (voice "
+                                        + juce::String (v) + ", step " + juce::String (s)
+                                        + ", bar " + juce::String ((int) bar) + ")");
+                        }
+                }
+
+                // Probabilistic non-fill cells must still follow the pure
+                // (seed, bar, voice, step) hash draw on a fill bar — the fill
+                // gate must not enter their decision. At complexity 1.0 the
+                // stepFires formula reduces to draw * 255 < probability
+                // (threshold always passes, probScale(1) == 1).
+                DrumPattern p;
+                p.loadStyle (style);
+                p.setComplexity (1.0f);
+
+                for (int v = 0; v < kVoices; ++v)
+                    for (int s = 0; s < DrumPattern::kSteps; ++s)
+                    {
+                        const auto& cell = p.getActiveTable().cells[v][s];
+                        if (cell.velHigh == 0 || cell.probability == 255
+                            || (cell.flags & StepCell::kFlagFillOnly) != 0)
+                            continue;
+
+                        for (uint32_t bar = DrumPattern::kFillEvery - 1;
+                             bar < 4 * DrumPattern::kFillEvery;
+                             bar += DrumPattern::kFillEvery)
+                        {
+                            const float draw = groove::hash01 (
+                                DrumPattern::kDefaultGrooveSeed ^ p.getActiveTable().styleSalt,
+                                bar, (uint32_t) v, (uint32_t) s, 0);
+                            expect (p.stepFires (v, s, bar)
+                                        == (draw * 255.0f < (float) cell.probability),
+                                    styleName (style) + ": probabilistic non-fill cell must follow "
+                                    "the pure hash draw on a fill bar (voice " + juce::String (v)
+                                    + ", step " + juce::String (s) + ", bar "
+                                    + juce::String ((int) bar) + ")");
+                        }
+                    }
+            }
+        }
+
+        beginTest ("fills — a hash-gated fill cell stays probabilistic within its fill bar");
+        {
+            // Jazz authors its snare turnaround hits at probability < 255: even
+            // during a fill bar the hash draw still applies (both gates stack),
+            // so over enough phrases the cell must both fire and sit out.
+            DrumPattern p;
+            p.loadStyle (DrumPattern::Style::Jazz);
+            p.setComplexity (1.0f);
+
+            int probabilisticFills = 0;
+            for (int v = 0; v < kVoices; ++v)
+                for (int s = 0; s < DrumPattern::kSteps; ++s)
+                {
+                    const auto& cell = p.getActiveTable().cells[v][s];
+                    if (cell.velHigh == 0 || cell.probability == 255
+                        || (cell.flags & StepCell::kFlagFillOnly) == 0)
+                        continue;
+
+                    ++probabilisticFills;
+                    int fired = 0, sat = 0;
+                    for (uint32_t bar = DrumPattern::kFillEvery - 1;
+                         bar < 64 * DrumPattern::kFillEvery;
+                         bar += DrumPattern::kFillEvery)
+                        (p.stepFires (v, s, bar) ? fired : sat)++;
+
+                    expect (fired > 0, "a hash-gated fill cell must fire on some fill bars (voice "
+                                       + juce::String (v) + ", step " + juce::String (s) + ")");
+                    expect (sat > 0,   "a hash-gated fill cell must sit out some fill bars (voice "
+                                       + juce::String (v) + ", step " + juce::String (s) + ")");
+                }
+
+            expect (probabilisticFills > 0,
+                    "Jazz must author at least one hash-gated fill cell");
+        }
+
         beginTest ("structural invariants — hit count monotonically non-decreasing in complexity");
         {
             for (auto style : allStyles)

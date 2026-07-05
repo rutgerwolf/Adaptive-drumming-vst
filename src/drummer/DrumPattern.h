@@ -53,7 +53,9 @@ struct StepCell
 
     static constexpr uint8_t kFlagAccent   = 1 << 0;
     static constexpr uint8_t kFlagGhost    = 1 << 1;
-    static constexpr uint8_t kFlagFillOnly = 1 << 2;   // reserved
+    static constexpr uint8_t kFlagFillOnly = 1 << 2;   // fill-bar-only cell: eligible solely on the
+                                                       // last bar of every DrumPattern::kFillEvery-bar
+                                                       // phrase (see DrumPattern::stepFires)
 };
 
 /** One style's complete groove: 6 voices × 16 steps of StepCells. */
@@ -94,6 +96,16 @@ public:
     /** Fixed default groove seed. Becomes user-editable state in a later
         roadmap step; until then every instance hashes with this constant. */
     static constexpr uint32_t kDefaultGrooveSeed = 0x67726F76u;   // 'grov'
+
+    /** Fill cadence in bars: a cell flagged StepCell::kFlagFillOnly is only
+        eligible during the last bar of every kFillEvery-bar phrase
+        (barIndex % kFillEvery == kFillEvery - 1), gated in stepFires() before
+        any threshold/probability logic. One shared constant for all styles —
+        the 4-bar phrase with a turnaround into the next downbeat is the
+        common convention across rock, jazz and electronic writing, and a
+        single constant is the least machinery (pure const data + audio-thread
+        arithmetic; no parameter, no per-table field). Public for tests. */
+    static constexpr uint32_t kFillEvery = 4;
 
     DrumPattern();
 
@@ -158,8 +170,11 @@ public:
 
     // ── Per-trigger queries (audio thread; pure arithmetic) ───────────────────
     /** True iff (voice, step) sounds in bar barIndex at the current complexity
-        and seed. Out-of-range voice/step returns false (defensive; the step
-        clock's boundary walk only ever queries step in [0, kSteps)). */
+        and seed. kFlagFillOnly cells are additionally gated to the last bar of
+        every kFillEvery-bar phrase (fills/turnarounds), rejected before any
+        threshold/probability logic on other bars. Out-of-range voice/step
+        returns false (defensive; the step clock's boundary walk only ever
+        queries step in [0, kSteps)). */
     bool  stepFires    (int voice, int step, uint32_t barIndex) const noexcept;
 
     /** Velocity 0..1 for a firing (voice, step) in bar barIndex at the current

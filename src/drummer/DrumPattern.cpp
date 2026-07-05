@@ -19,6 +19,13 @@
 // thresholds 200–240 with probability < 255 and velRandRange humanization.
 // They only become audible near full complexity, thicken with it (probScale),
 // and vary per bar through the stateless seeded hash.
+//
+// Fills/turnarounds are a third authored layer: kFlagFillOnly cells that
+// stepFires() additionally gates to the last bar of every
+// DrumPattern::kFillEvery-bar phrase (barIndex % kFillEvery == kFillEvery - 1)
+// and rejects on every other bar. They never appear in the legacy golden
+// masks (those pin bar 0, never a fill bar) and leave all non-fill cells
+// untouched — pure const data plus one branch of audio-thread arithmetic.
 
 namespace
 {
@@ -39,6 +46,17 @@ namespace
                               uint8_t probability, int8_t velRand) noexcept
     {
         return { velLow, velHigh, threshold, probability, velRand, StepCell::kFlagGhost };
+    }
+
+    // A fill/turnaround cell: only ever eligible on the last bar of every
+    // DrumPattern::kFillEvery-bar phrase (gated in stepFires before any
+    // threshold/probability logic); within that bar it behaves like any other
+    // cell, so a fill can still be hash-gated (probability < 255) or reserved
+    // for higher complexity (threshold > 0).
+    constexpr StepCell fill (uint8_t velLow, uint8_t velHigh, uint8_t threshold,
+                             uint8_t probability = 255, int8_t velRand = 0) noexcept
+    {
+        return { velLow, velHigh, threshold, probability, velRand, StepCell::kFlagFillOnly };
     }
 
     // Gently raises ornament probability with complexity so the probabilistic
@@ -84,6 +102,20 @@ namespace
         // Tom — the little fill into beat 4.
         t.cells[vTom][13] = hit (72, 112, kThrFull);
         t.cells[vTom][14] = hit (76, 116, kThrFull);
+
+        // Turnaround (kFlagFillOnly — last bar of every kFillEvery-bar phrase
+        // only): a punchy 16th-note snare-and-toms run across beat 4. The tom
+        // doubles the backbeat on 12 (a flam-like crack that announces the
+        // fill), snares drive the middle 16ths, and the closing tom on 15
+        // lands the phrase into the next downbeat — whose crash + accented
+        // kick the backbone already authors, so the resolution comes free.
+        // Deterministic at threshold 0 so the turnaround reads at every
+        // complexity; the second snare 16th is hash-gated so alternate
+        // phrases breathe slightly differently.
+        t.cells[vTom]  [12] = fill (74, 112, kThrSparse);
+        t.cells[vSnare][13] = fill (86, 120, kThrSparse);
+        t.cells[vSnare][14] = fill (78, 114, kThrSparse, 200, 6);
+        t.cells[vTom]  [15] = fill (84, 122, kThrSparse);
 
         return t;
     }
@@ -144,6 +176,18 @@ namespace
         t.cells[vTom][13] = hit (68, 108, kThrFull);
         t.cells[vTom][14] = hit (72, 112, kThrFull);
 
+        // Turnaround (kFlagFillOnly — last bar of every kFillEvery-bar phrase
+        // only): a jazz drummer marks the phrase boundary by comping harder,
+        // not by rolling toms — so the fill is two extra snare comp hits
+        // around beat 4, hash-gated and humanized exactly like the rest of
+        // the comping layer (the snare row stays probabilistic by design; no
+        // two turnarounds land identically), plus one deterministic tom on
+        // the final swung 16th that sets up the next phrase's downbeat.
+        // Velocities stay conversational — a lean, not a rock fill.
+        t.cells[vSnare][12] = fill (32, 58, kThrSparse, 220, 10);
+        t.cells[vSnare][14] = fill (28, 52, kThrMedium, 190, 10);
+        t.cells[vTom]  [15] = fill (50, 86, kThrSparse, 255, 8);
+
         return t;
     }
 
@@ -176,6 +220,17 @@ namespace
 
         // Crash — downbeat, full complexity only.
         t.cells[vCrash][0] = hit (95, 127, kThrFull, StepCell::kFlagAccent);
+
+        // Turnaround (kFlagFillOnly — last bar of every kFillEvery-bar phrase
+        // only): the classic drum-machine build — a snare 16th right after
+        // the backbeat rolling into a two-step sequenced tom run (the 808
+        // tom fill) that drops onto the next phrase's downbeat kick.
+        // Deterministic, threshold 0 and un-humanized by design, matching the
+        // style's uniform machine feel; the existing hash-gated snare ghosts
+        // on 14/15 still layer on top near full complexity for extra motion.
+        t.cells[vSnare][13] = fill (80, 116, kThrSparse);
+        t.cells[vTom]  [14] = fill (72, 110, kThrSparse);
+        t.cells[vTom]  [15] = fill (78, 116, kThrSparse);
 
         return t;
     }
@@ -269,6 +324,15 @@ bool DrumPattern::stepFires (int voice, int step, uint32_t barIndex) const noexc
     const StepCell& cell = activeTable->cells[voice][step];
 
     if (cell.velHigh == 0 || complexity255 < cell.complexityThreshold)
+        return false;
+
+    // Fill/turnaround gate: a kFlagFillOnly cell is only ever eligible on the
+    // last bar of every kFillEvery-bar phrase — rejected here, before the
+    // probability draw, on all other bars (barIndex already arrives with
+    // every call, so this stays pure per-trigger arithmetic). Non-fill cells
+    // are untouched.
+    if ((cell.flags & StepCell::kFlagFillOnly) != 0
+        && barIndex % kFillEvery != kFillEvery - 1)
         return false;
 
     if (cell.probability == 255)
