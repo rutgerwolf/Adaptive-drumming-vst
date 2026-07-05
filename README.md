@@ -157,11 +157,12 @@ part of the groove.
   lets you route into a bus the plugin already reports as active). Route the part you
   want the drummer to react to (a vocal, a guitar, a full mix) into it via your host's
   sidechain/send routing, and it takes priority as the guide the moment it's connected.
-  - **Adobe Audition:** Multitrack → Track → *Add Stereo Bus Track*; on the source
-    track's **S1** send, route it to that bus; on Adaptive Drummer's own send box,
-    pick **Sidechain routing** to feed the bus into this effect's Sidechain input.
-    (Audition has had occasional bus-routing reliability issues in some versions —
-    if the guide doesn't respond, try re-doing the send.)
+  - **Adobe Audition:** on the source track's own **S1** send, pick
+    **Side-Chain → Create → Adaptive Drummer**. Route the source track directly —
+    confirmed in testing that chaining through an intermediate bus (source → Bus A →
+    Bus A's own send → Sidechain) does *not* reliably carry audio through in
+    Audition, even though the routing looks correct in the mixer and in the
+    plugin's own channel-routing dialog. A direct track → Sidechain send does work.
   - **Reaper / Ableton Live / Cubase / Studio One / FL Studio / Bitwig:** use the
     host's normal sidechain-input picker on the plugin (exact wording varies by host).
 - **No sidechain connected** — falls back to analysing this effect's own input (put
