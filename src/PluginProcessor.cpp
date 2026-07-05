@@ -117,7 +117,17 @@ AdaptiveDrummerProcessor::AdaptiveDrummerProcessor()
     : AudioProcessor (BusesProperties()
           .withInput  ("Input",     juce::AudioChannelSet::stereo(), true)
           .withOutput ("Output",    juce::AudioChannelSet::stereo(), true)
-          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
+          // Enabled by default: some hosts' sidechain-routing UI (observed in
+          // Adobe Audition) only lets a user route into a bus the plugin
+          // already reports as active -- it never activates a disabled one on
+          // the user's behalf. A disabled-by-default Sidechain silently never
+          // received audio in that case (Follow would read as connected in
+          // our own code once a host routes into it, but nothing arrived).
+          // Enabled-by-default costs two always-present input channels in
+          // hosts that never touch Follow, but without it Follow -- the
+          // plugin's actual reason to exist over a plain drum machine -- is
+          // unusable in at least one real host.
+          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "AdaptiveDrummer", createParameterLayout())
 {
     // Baseline for the producer poll's style-change edge detector (decision:

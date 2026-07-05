@@ -18,9 +18,10 @@
  * around the grid's base "intensity") and adds a velocity-only accent term
  * at step boundaries (see DrumPattern::setFollowAccent) — a modulation layer
  * on top of the grid, not a replacement of it. The guide is a user-chosen
- * *other* track routed into the (disabled-by-default) Sidechain bus when
- * connected; otherwise it falls back to this effect's own input; with no
- * guide connected at all, Follow modulates nothing.
+ * *other* track routed into the (enabled-by-default -- see the constructor
+ * comment) Sidechain bus when connected; otherwise it falls back to this
+ * effect's own input; with no guide connected at all, Follow modulates
+ * nothing.
  *
  * Parameters (managed by apvts, not exhaustive):
  *   bpm         float  40-240  default 120   manual BPM (ignored when host provides tempo)
