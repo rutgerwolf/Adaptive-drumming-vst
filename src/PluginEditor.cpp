@@ -338,11 +338,15 @@ void AdaptiveDrummerEditor::updateFromProcessor()
     jazzButton      .setToggleState (style == 1, juce::dontSendNotification);
     electronicButton.setToggleState (style == 2, juce::dontSendNotification);
 
-    // Groove pad stays enabled and draggable throughout — the grid is always
-    // authoritative. While Follow is on and actually modulating (a guide is
-    // connected), show that as an overlay ring instead of moving the puck.
+    // Groove pad stays enabled and draggable throughout — the grid stays
+    // authoritative (Follow's blends are bounded around it). While Follow is
+    // on and actually modulating (a guide is connected), show the effective
+    // (complexity, intensity) as an overlay ring instead of moving the puck.
     const bool followOverlay = proc.isGuideAvailable();
-    groovePad.setFollowOverlay (followOverlay, proc.getCurrentIntensity(), proc.getGuideAccent());
+    groovePad.setFollowOverlay (followOverlay,
+                                proc.getCurrentComplexity(),
+                                proc.getCurrentIntensity(),
+                                proc.getGuideAccent());
 
     // Per-voice mute buttons reflect the processor's mask (covers state
     // restore and any future non-editor writer, same as the style sync above)

@@ -307,40 +307,54 @@ void AdaptiveDrummerProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     drummer.setSeed (currentGrooveSeed.load (std::memory_order_relaxed));
 
-    // The 2-D groove axes. Complexity is ALWAYS the grid's — Follow never
-    // writes it (see DrumPattern's class comment). When Follow is on and a
-    // guide is connected, it modulates intensity — a bounded blend toward the
-    // guide's phrase-level "macro" energy around the grid's base value — and
-    // drives a velocity-only accent term (DrumPattern::setFollowAccent). With
-    // no guide connected, Follow modulates nothing (manual passthrough).
+    // The 2-D groove axes. When Follow is on and a guide is connected, it
+    // modulates BOTH axes: bounded blends of intensity AND complexity toward
+    // the guide's phrase-level "macro" energy, around the grid's base values.
+    // One energy signal drives both, so a loud section gets louder hits and a
+    // busier groove together, a quiet one softer and sparser — the mechanism
+    // that makes GarageBand/Logic Drummer's Follow audibly contrast (their
+    // complexity axis adds/removes ghost notes with loudness; ours gates the
+    // same way through StepCell::complexityThreshold). Follow also drives a
+    // velocity-only accent term (DrumPattern::setFollowAccent). With no guide
+    // connected, Follow modulates nothing (manual passthrough on both axes).
     const float baseComplexity = *apvts.getRawParameterValue ("complexity");
     const float baseIntensity  = *apvts.getRawParameterValue ("intensity");
 
-    float intensityEff = baseIntensity;
-    float accent01     = 0.0f;
-    float accentDepth  = 0.0f;
+    float complexityEff = baseComplexity;
+    float intensityEff  = baseIntensity;
+    float accent01      = 0.0f;
+    float accentDepth   = 0.0f;
 
     if (follow && guideAvailable)
     {
         // Ceilings keep the grid authoritative even at max Follow strength
-        // (0.75 blend ⇒ the grid always keeps >= 25% weight).
-        constexpr float kMaxIntensityBlend = 0.75f;
-        constexpr float kMaxAccentDepth    = 0.40f;
+        // (0.75 blend ⇒ the grid always keeps >= 25% weight on each axis).
+        // Complexity uses the same 0.75 as intensity: the axes are meant to
+        // move in lock-step (one dial, one energy signal), and no listening
+        // test has yet justified a different ceiling per axis.
+        constexpr float kMaxIntensityBlend  = 0.75f;
+        constexpr float kMaxComplexityBlend = 0.75f;
+        constexpr float kMaxAccentDepth     = 0.40f;
 
+        // One Follow Amount scales both axis blends (and the accent depth)
+        // together — a single "how much does Follow do" control.
         const float followAmount = *apvts.getRawParameterValue ("followAmount");
-        const float blend        = kMaxIntensityBlend * followAmount;
-        intensityEff = baseIntensity + blend * (energyAnalyzer.getMacroEnergy() - baseIntensity);
-        accent01     = energyAnalyzer.getAccent();
-        accentDepth  = kMaxAccentDepth * followAmount;
+        const float macroEnergy  = energyAnalyzer.getMacroEnergy();
+        intensityEff  = baseIntensity
+                        + kMaxIntensityBlend  * followAmount * (macroEnergy - baseIntensity);
+        complexityEff = baseComplexity
+                        + kMaxComplexityBlend * followAmount * (macroEnergy - baseComplexity);
+        accent01      = energyAnalyzer.getAccent();
+        accentDepth   = kMaxAccentDepth * followAmount;
     }
 
-    drummer.setComplexity   (baseComplexity);          // always the grid — the hard constraint
+    drummer.setComplexity   (complexityEff);   // like setIntensity: applied immediately, per block
     drummer.setIntensity    (intensityEff);
     drummer.setFollowAccent (accent01, accentDepth);
     guideAvailableState.store (follow && guideAvailable, std::memory_order_relaxed);
 
-    currentComplexityState.store (baseComplexity, std::memory_order_relaxed);
-    currentIntensityState.store  (intensityEff,   std::memory_order_relaxed);
+    currentComplexityState.store (complexityEff, std::memory_order_relaxed);
+    currentIntensityState.store  (intensityEff,  std::memory_order_relaxed);
 
     // Generate drums into the main output bus. Stopping used to hard-reset
     // the drummer every stopped block, truncating a ringing tail (e.g. the

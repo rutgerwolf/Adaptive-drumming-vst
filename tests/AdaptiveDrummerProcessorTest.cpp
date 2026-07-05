@@ -182,8 +182,13 @@ public:
             proc.releaseResources();
         }
 
-        beginTest ("Follow never changes the complexity readout, even if the parameter moves mid-run");
+        beginTest ("Follow modulates complexity around the grid's base — up when loud, down when silent, always grid-anchored");
         {
+            // The two-axis Follow behaviour (the GarageBand-style change that
+            // reversed the old "Follow never touches complexity" rule): the
+            // guide's macro energy pulls the effective complexity toward
+            // itself around the grid's base, exactly like intensity — bounded
+            // so the grid always keeps >= 25% authority, even at max Follow.
             AdaptiveDrummerProcessor proc;
 
             const double sampleRate = 44100.0;
@@ -197,15 +202,92 @@ public:
 
             proc.prepareToPlay (sampleRate, blockSize);
             proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+            proc.apvts.getParameter ("followAmount")->setValueNotifyingHost (1.0f);   // max — exercises the ceiling
 
             auto* complexityParam = proc.apvts.getParameter ("complexity");
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.5f));
+            const float base = *proc.apvts.getRawParameterValue ("complexity");
+
             const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
             juce::AudioBuffer<float> buffer (totalChannels, blockSize);
             juce::MidiBuffer midi;
 
             double phase = 0.0;
             const double phaseInc = juce::MathConstants<double>::twoPi * 440.0 / sampleRate;
-            auto renderLoudSidechainBlock = [&]
+            auto feedSidechain = [&] (float amplitude, int numBlocks)
+            {
+                for (int b = 0; b < numBlocks; ++b)
+                {
+                    buffer.clear();
+                    for (int ch = 2; ch < 4; ++ch)
+                    {
+                        float* d = buffer.getWritePointer (ch);
+                        double p = phase;
+                        for (int i = 0; i < blockSize; ++i) { d[i] = amplitude * (float) std::sin (p); p += phaseInc; }
+                    }
+                    phase += phaseInc * blockSize;
+                    proc.processBlock (buffer, midi);
+                }
+            };
+
+            // The 0.75 blend ceiling (kMaxComplexityBlend): even at max Follow
+            // with the macro envelope pinned at an extreme, the readout can
+            // never leave [0.25 * base, base + 0.75 * (1 - base)].
+            const float ceilingUp   = base + 0.75f * (1.0f - base);
+            const float ceilingDown = 0.25f * base;
+
+            feedSidechain (0.9f, 100);   // loud guide, long enough for the macro envelope to settle up
+            expectGreaterThan (proc.getCurrentComplexity(), base,
+                                "a loud connected guide must raise the effective complexity above the grid's base");
+            expectLessOrEqual (proc.getCurrentComplexity(), ceilingUp + 1.0e-4f,
+                               "the grid must keep >= 25% authority over complexity even at max Follow");
+
+            feedSidechain (0.0f, 100);   // sidechain still enabled/connected, but silent now
+            expectLessThan (proc.getCurrentComplexity(), base,
+                            "a connected-but-silent guide must lower the effective complexity below the grid's base");
+            expectGreaterOrEqual (proc.getCurrentComplexity(), ceilingDown - 1.0e-4f,
+                                  "the grid must keep >= 25% authority over complexity on the way down too");
+
+            proc.releaseResources();
+        }
+
+        beginTest ("Follow's complexity modulation changes which cells actually fire, not just the readout");
+        {
+            // The point of the change: a louder guide doesn't just move a
+            // number, it makes marginal cells join in — Rock's even-8th hi-hat
+            // ticks sit at threshold 100 (kThrMedium, deterministic
+            // probability 255), so at base complexity 0.2 (c255 = 51) they are
+            // silent, and once Follow pushes the effective complexity past
+            // ~0.39 they must fire. Proven through the real firing gate
+            // (DrumPattern::stepFires on the same built-in Rock table the
+            // processor is playing), the same technique the mute test below
+            // uses.
+            AdaptiveDrummerProcessor proc;
+
+            const double sampleRate = 44100.0;
+            const int    blockSize  = 512;
+
+            juce::AudioProcessor::BusesLayout layout;
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());
+            layout.outputBuses.add (juce::AudioChannelSet::stereo());
+            layout.inputBuses.add  (juce::AudioChannelSet::stereo());   // sidechain, enabled
+            expect (proc.setBusesLayout (layout), "the 3-bus (sidechain-enabled) layout must be settable");
+
+            proc.prepareToPlay (sampleRate, blockSize);
+            proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
+            proc.apvts.getParameter ("followAmount")->setValueNotifyingHost (1.0f);
+
+            auto* complexityParam = proc.apvts.getParameter ("complexity");
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.2f));
+            const float base = *proc.apvts.getRawParameterValue ("complexity");
+
+            const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
+            juce::AudioBuffer<float> buffer (totalChannels, blockSize);
+            juce::MidiBuffer midi;
+
+            double phase = 0.0;
+            const double phaseInc = juce::MathConstants<double>::twoPi * 440.0 / sampleRate;
+            for (int b = 0; b < 100; ++b)   // loud guide, macro envelope settles high
             {
                 buffer.clear();
                 for (int ch = 2; ch < 4; ++ch)
@@ -216,30 +298,33 @@ public:
                 }
                 phase += phaseInc * blockSize;
                 proc.processBlock (buffer, midi);
-            };
-
-            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.3f));
-            const float expected1 = *proc.apvts.getRawParameterValue ("complexity");
-            for (int b = 0; b < 40; ++b)
-            {
-                renderLoudSidechainBlock();
-                expectEquals (proc.getCurrentComplexity(), expected1,
-                              "complexity must equal the grid parameter on every single block");
             }
 
-            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.8f));   // change mid-run
-            const float expected2 = *proc.apvts.getRawParameterValue ("complexity");
-            for (int b = 0; b < 40; ++b)
-            {
-                renderLoudSidechainBlock();
-                expectEquals (proc.getCurrentComplexity(), expected2,
-                              "complexity must track a parameter change instantly, still exactly the grid's value");
-            }
+            const float complexityEff = proc.getCurrentComplexity();
+            expectGreaterThan (complexityEff, base, "premise: Follow must have raised the effective complexity");
+
+            // Same firing gate, same Rock table the processor is playing: the
+            // even-8th hats must be silent at the unmodulated base and firing
+            // at the Follow-modulated effective complexity, in every bar
+            // (deterministic backbone cells — no hash involved).
+            DrumPattern p;   // constructs on the built-in Rock table
+            const int vHiHat = 2;
+            for (uint32_t bar = 0; bar < 4; ++bar)
+                for (int s : { 2, 6, 10, 14 })
+                {
+                    p.setComplexity (base);
+                    expect (! p.stepFires (vHiHat, s, bar),
+                            "premise: an even-8th hat must NOT fire at the unmodulated base complexity");
+
+                    p.setComplexity (complexityEff);
+                    expect (p.stepFires (vHiHat, s, bar),
+                            "the loud guide's effective complexity must make the even-8th hats join in");
+                }
 
             proc.releaseResources();
         }
 
-        beginTest ("Follow modulates intensity around the grid's base — up when loud, down when silent");
+        beginTest ("Follow modulates intensity around the grid's base — up when loud, down when silent (complexity moves with it)");
         {
             AdaptiveDrummerProcessor proc;
 
@@ -255,9 +340,12 @@ public:
             proc.prepareToPlay (sampleRate, blockSize);
             proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
 
-            auto* intensityParam = proc.apvts.getParameter ("intensity");
-            intensityParam->setValueNotifyingHost (intensityParam->convertTo0to1 (0.5f));
-            const float base = *proc.apvts.getRawParameterValue ("intensity");
+            auto* intensityParam  = proc.apvts.getParameter ("intensity");
+            auto* complexityParam = proc.apvts.getParameter ("complexity");
+            intensityParam->setValueNotifyingHost  (intensityParam->convertTo0to1  (0.5f));
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.5f));
+            const float base           = *proc.apvts.getRawParameterValue ("intensity");
+            const float baseComplexity = *proc.apvts.getRawParameterValue ("complexity");
 
             const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
             juce::AudioBuffer<float> buffer (totalChannels, blockSize);
@@ -284,10 +372,14 @@ public:
             feedSidechain (0.9f, 100);   // loud guide, long enough for the macro envelope to settle up
             expectGreaterThan (proc.getCurrentIntensity(), base,
                                 "a loud connected guide must raise the effective intensity above the grid's base");
+            expectGreaterThan (proc.getCurrentComplexity(), baseComplexity,
+                                "the same loud guide must raise the effective complexity too — both axes move together");
 
             feedSidechain (0.0f, 100);   // sidechain still enabled/connected, but silent now
             expectLessThan (proc.getCurrentIntensity(), base,
                             "a connected-but-silent guide must lower the effective intensity below the grid's base");
+            expectLessThan (proc.getCurrentComplexity(), baseComplexity,
+                            "the same silent guide must lower the effective complexity too — both axes move together");
 
             proc.releaseResources();
         }
@@ -309,9 +401,12 @@ public:
             proc.apvts.getParameter ("follow")->setValueNotifyingHost (1.0f);
             proc.apvts.getParameter ("followAmount")->setValueNotifyingHost (0.0f);   // fully off
 
-            auto* intensityParam = proc.apvts.getParameter ("intensity");
-            intensityParam->setValueNotifyingHost (intensityParam->convertTo0to1 (0.5f));
-            const float base = *proc.apvts.getRawParameterValue ("intensity");
+            auto* intensityParam  = proc.apvts.getParameter ("intensity");
+            auto* complexityParam = proc.apvts.getParameter ("complexity");
+            intensityParam->setValueNotifyingHost  (intensityParam->convertTo0to1  (0.5f));
+            complexityParam->setValueNotifyingHost (complexityParam->convertTo0to1 (0.4f));
+            const float base           = *proc.apvts.getRawParameterValue ("intensity");
+            const float baseComplexity = *proc.apvts.getRawParameterValue ("complexity");
 
             const int totalChannels = juce::jmax (proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels());
             juce::AudioBuffer<float> buffer (totalChannels, blockSize);
@@ -334,6 +429,8 @@ public:
 
             expectEquals (proc.getCurrentIntensity(), base,
                           "followAmount == 0 must leave intensity exactly at the grid's base, even with a loud guide");
+            expectEquals (proc.getCurrentComplexity(), baseComplexity,
+                          "followAmount == 0 must leave complexity exactly at the grid's base too, even with a loud guide");
 
             proc.releaseResources();
         }

@@ -49,7 +49,7 @@ private:
     // which cells fire — see AdaptiveDrummerProcessor::randomizeGrooveSeed().
     juce::TextButton newSeedButton { "New Seed" };
 
-    // Follow (guide-driven accent + intensity modulation) + guide-energy meter
+    // Follow (guide-driven accent + intensity/complexity modulation) + guide-energy meter
     juce::TextButton     followButton { "Follow" };
     juce::Rectangle<int> energyMeterBounds;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followAttachment;

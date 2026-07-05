@@ -74,20 +74,22 @@ void XYPad::paint (juce::Graphics& g)
     g.setColour (kText);
     g.drawEllipse (dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f, 1.0f);
 
-    // Follow overlay: a hollow ring at the SAME x (complexity is never
-    // modulated by Follow) but at the effective (modulated) intensity's y,
-    // connected to the actual puck by a thin line. The ring pulses -- grows
-    // and brightens -- with the guide's current accent signal.
+    // Follow overlay: a hollow ring at the effective (Follow-modulated)
+    // position -- complexity on x, intensity on y, both blended toward the
+    // guide's macro energy -- connected to the actual puck by a thin line.
+    // The ring pulses -- grows and brightens -- with the guide's current
+    // accent signal.
     if (followOverlayActive)
     {
-        const float ringY     = area.getY() + (1.0f - followIntensity01) * area.getHeight();
+        const float ringX      = area.getX() + followComplexity01 * area.getWidth();
+        const float ringY      = area.getY() + (1.0f - followIntensity01) * area.getHeight();
         const float ringRadius = 8.0f + followAccent01 * 6.0f;
 
         g.setColour (kMuted.withAlpha (0.5f));
-        g.drawLine (dotX, dotY, dotX, ringY, 1.0f);
+        g.drawLine (dotX, dotY, ringX, ringY, 1.0f);
 
         g.setColour (kAccent.withAlpha (0.5f + 0.5f * followAccent01));
-        g.drawEllipse (dotX - ringRadius, ringY - ringRadius, ringRadius * 2.0f, ringRadius * 2.0f, 1.5f);
+        g.drawEllipse (ringX - ringRadius, ringY - ringRadius, ringRadius * 2.0f, ringRadius * 2.0f, 1.5f);
     }
 }
 
@@ -160,9 +162,10 @@ void XYPad::mouseDoubleClick (const juce::MouseEvent&)
     repaint();
 }
 
-void XYPad::setFollowOverlay (bool active, float intensityEff01, float accent01)
+void XYPad::setFollowOverlay (bool active, float complexityEff01, float intensityEff01, float accent01)
 {
     followOverlayActive = active;
+    followComplexity01   = juce::jlimit (0.0f, 1.0f, complexityEff01);
     followIntensity01    = juce::jlimit (0.0f, 1.0f, intensityEff01);
     followAccent01       = juce::jlimit (0.0f, 1.0f, accent01);
     repaint();
