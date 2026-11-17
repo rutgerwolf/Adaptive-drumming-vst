@@ -1,7 +1,14 @@
 # Ontwerpplan: Audio Fit Tool
 
-Versie 0.4 — 17 november 2026
-Status: ontwerp, nog geen code. Geschreven als bouwinstructie voor een AI-codeassistent.
+Versie 0.5 — 17 november 2026
+Status: fase 1 gebouwd (v0.1.0). Geschreven als bouwinstructie voor een AI-codeassistent.
+
+Wijzigingen t.o.v. 0.4:
+- Open vragen §14 beantwoord: er klinkt altijd muziek; voice-over ligt als tweede laag over een deel van het blok, over andere muziek dan het deel zonder voice-over. Nieuw §6.10 (stemspoor) en recept `version: 2`.
+- Voice-over hangt aan een muziekfragment (anker + offset) en schuift mee met de fit.
+- Stem standaard op oorspronkelijke snelheid; per stemfragment optioneel een doelduur (licht rekken/indikken, preset `voice`).
+- Automatische ducking van de muziek onder de stem, instelbaar per blok.
+- Tijden in het recept met 6 decimalen (was 3), zodat snap-punten behouden blijven.
 
 Wijzigingen t.o.v. 0.3:
 - Node.js en ffmpeg zijn vereisten voor de CLI (aanwezig of te installeren); opdracht `doctor` controleert dit.
@@ -215,6 +222,38 @@ Regels:
 ### 6.9 Sneltoetsen
 `Spatie` play/stop · `I`/`O` in/uit op cursor · `M` marker · `L` loop · `Enter` selectie → actief blok · `Ctrl+Z`/`Ctrl+Y` undo/redo.
 
+### 6.10 Stemspoor (voice-over)
+
+Een blok heeft twee lagen:
+- **Muziekspoor** = `fragments` + `transitions` (ongewijzigd). Vult altijd exact de doelduur; de fit (§6.5) geldt alleen hiervoor.
+- **Stemspoor** = `voice`: nul of meer stemfragmenten die bovenop de muziek klinken.
+
+Stemfragment (`voice[i]`):
+
+| Veld | Betekenis |
+|---|---|
+| `id` | `v1`, `v2`, … |
+| `source`, `in`, `out` | zoals bij een muziekfragment; `"@marker"` toegestaan |
+| `anchor` | id van het muziekfragment waaraan de stem hangt |
+| `offset` | seconden na het **begin van het anker in de uitvoer** (mag negatief, ≥ −begin anker) |
+| `targetDuration` | `null` = oorspronkelijke snelheid; getal = gerekt/ingedikt tot deze duur |
+| `preset` | standaard `"voice"`; `mode` standaard `"pitch"` |
+| `gainDb`, `fadeInMs`, `fadeOutMs` | zoals bij muziek (fades standaard 8 ms) |
+
+Regels:
+- Starttijd in het blok = uitvoerstart van het anker + `offset`. Verandert de fit, dan schuift de stem mee.
+- Stem moet volledig binnen het blok vallen; anders fout met het aantal seconden te lang (geen render/export).
+- Stemfragmenten mogen elkaar niet overlappen; anders fout met de betrokken ids.
+- Ratio-indicatie zoals §6.5; bij `targetDuration` buiten oranje een waarschuwing ("stem duidelijk hoorbaar versneld/vertraagd").
+- Muziekfragment verwijderen dat anker is → fout met de lijst stem-ids (eerst stem verwijderen of verhangen).
+- Stem dupliceren/verplaatsen naar ander blok: niet in fase 2.
+
+**Ducking** (per blok): `duckDb` (standaard −6 dB; 0 = uit) en `duckMs` (standaard 150 ms). Tijdens elk stemfragment zakt de muziek naar `duckDb`; de daling begint `duckMs` vóór de stemstart en het herstel eindigt `duckMs` na het stemeinde (begrensd op het blok). Overlappende ducking-zones van opeenvolgende stemfragmenten worden samengevoegd. Curve: cosinus.
+
+Renderen (aanvulling op §7.3): na stap 6 de ducking-omhullende op de muziekbuffer; daarna elk stemfragment (stretch indien `targetDuration`, gain, fades) optellen op zijn starttijd. Invariant ongewijzigd.
+
+Bloktijdlijn (editor): tweede rij onder de muziek met de stemfragmenten op hun positie; ducking-zones gearceerd in de muziekrij.
+
 ## 7. Algoritmen (kern)
 
 ### 7.1 WSOLA (toonhoogte behouden)
@@ -287,13 +326,16 @@ Curves over een overlap van `n` samples, `x = k/n`: `equal_power` uit = `cos(x·
 | `update_marker` | `source`, `name`, `newName?`, `time?` | — |
 | `delete_marker` | `source`, `name` | — |
 | `create_block` | `name`, `targetDuration` | blok-id |
-| `update_block` | `block`, `name?`, `targetDuration?`, `fitMode?` | — |
+| `update_block` | `block`, `name?`, `targetDuration?`, `fitMode?`, `duckDb?`, `duckMs?` | — |
 | `delete_block` | `block` | — |
 | `add_fragment` | `block`, `source`, `in`, `out`, `position?`, `snap?`, `mode?` | fragment-id, werkelijke in/uit |
 | `update_fragment` | `fragment`, `in?`, `out?`, `mode?`, `gainDb?`, `fadeInMs?`, `fadeOutMs?`, `locked?`, `manualDuration?` | — |
 | `move_fragment` | `fragment`, `position` (en optioneel `block`) | — |
 | `duplicate_fragment` | `fragment` | nieuw fragment-id |
 | `delete_fragment` | `fragment` | — |
+| `add_voice` | `block`, `source`, `in`, `out`, `anchor`, `offset?`, `targetDuration?`, `snap?`, `preset?`, `mode?` | stem-id, werkelijke in/uit, starttijd in blok |
+| `update_voice` | `voice`, `in?`, `out?`, `anchor?`, `offset?`, `targetDuration?`, `gainDb?`, `fadeInMs?`, `fadeOutMs?`, `preset?`, `mode?` | — |
+| `delete_voice` | `voice` | — |
 | `set_transition` | `block`, `index`, `type`, `ms?`, `curve?`, `duckDb?` | — |
 | `fit_report` | `block?` (leeg = alle) | per fragment: brondur, doeldur, ratio, status; per blok: klopt of afwijking |
 | `render_block` | `block` | duur, piek (dBFS), clipping ja/nee |
@@ -411,19 +453,21 @@ Zelftest: `window.__selftest()` in de editor en `node audiofit-cli.mjs selftest`
 | Fase | Inhoud | Resultaat |
 |---|---|---|
 | 1 | Kern (`Store`, `Commands`, `Validator`, `Stretch`, `Resampler`, `Renderer`, `WavCodec`) + editor: laden, golfvorm, selectie, snap, markers, één fragment → fit → export | 12 s → 10 s met behoud van toonhoogte |
-| 2 | Meerdere fragmenten per blok, fit-modi, alle overgangstypen, ratio-indicatie, A/B, cache, undo/redo | Blokken van 15 s met overlap |
+| 2 | Meerdere fragmenten per blok, fit-modi, alle overgangstypen, ratio-indicatie, A/B, cache, undo/redo; stemspoor met anker, ducking (§6.10); render in Worker | Blokken van 15 s met overlap en voice-over |
 | 3 | Recept opslaan/laden, route A (context kopiëren, commando's uitvoeren), zelftest | Aansturing via een Claude-chat |
 | 4 | Vereisten controleren/installeren (Node, ffmpeg); `audiofit-cli.mjs`: `doctor`, `schema`, `validate`, `report`, `exec`, `render`, `probe`, `selftest` | Aansturing door Claude Code |
 | 5 (optioneel) | Externe stretch-engine, ZIP-export, normaliseren per reeks | Uitbreidingen |
 
 Elke fase levert een werkend geheel op.
 
-## 14. Open vragen
+## 14. Open vragen (beantwoord in 0.5)
 
 1. **Voice-over als laag**: ligt de voice-over bóven de muziek (beide klinken tegelijk gedurende het hele blok), of volgen muziek en stem elkaar op met alleen een overlap bij de overgang?
    - Dit plan ondersteunt het tweede volledig. Het eerste kan nu alleen via een lange `duck`- of `mix`-overgang (maximaal 90% overlap), wat omslachtig is.
    - Als het eerste de bedoeling is, krijgt een blok **twee sporen** (muziek en stem) die elk afzonderlijk op de doelduur worden gefit, met automatische ducking van de muziek onder de stem. Gevolgen: uitbreiding van het recept (`tracks` in plaats van één `fragments`-lijst), van de fit-berekening (per spoor), van de bloktijdlijn (twee rijen) en van de commando's (argument `track`). Dat is een wijziging in fase 2, niet achteraf in te bouwen zonder het receptformaat te breken.
 2. **Stem rekken**: mag de voice-over zelf ook in tempo aangepast worden, of blijft die altijd op oorspronkelijke snelheid (`locked`) en wordt alleen de muziek gefit?
+
+**Antwoord (0.5):** muziek klinkt altijd; voice-over ligt over een deel van het blok, over andere muziek dan het deel zonder stem → twee lagen, zie §6.10. Stem mag indien nodig licht versneld of vertraagd worden (optionele `targetDuration`). Recept `version: 2` is een uitbreiding: een recept `version: 1` blijft geldig (`voice: []`, standaard-ducking).
 
 ## 15. Instructie voor de bouwende AI
 
