@@ -168,6 +168,21 @@ button.dirty{border-color:var(--orange);color:var(--orange)}
 .hsec h4{margin:16px 0 4px;font-size:14px;border-bottom:1px solid var(--line);padding-bottom:3px}.hsec h5{margin:10px 0 2px;font-size:12px;color:var(--dim)}
 .hul{margin:4px 0;padding-left:20px}.hul li{margin:3px 0}.hp{margin:4px 0}
 .hsec code{background:#0f1216;border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:12px}
+.rrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:6px 0}
+.rrow .lbl{color:var(--dim)}
+.meter{position:relative;width:220px;height:12px;background:#0f1216;border:1px solid var(--line);border-radius:3px;overflow:hidden;flex:none}
+.meter.off{opacity:.35}
+.meter .rms{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,var(--green) 0,var(--green) 75%,var(--orange) 85%,var(--red) 100%);background-size:220px 100%}
+.meter .pk{position:absolute;top:0;bottom:0;width:2px;left:0;background:#fff}
+.meter .tk{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.55)}
+.mdb{width:64px;font-variant-numeric:tabular-nums;color:var(--dim);font-size:12px}
+.clip{padding:0 6px;border-radius:3px;font-size:11px;border:1px solid var(--line);color:var(--dim)}
+.clip.on{background:var(--red);border-color:var(--red);color:#fff}
+.rstat{font-variant-numeric:tabular-nums;min-width:120px}
+.rstat.live{color:var(--red);font-weight:600}
+button.rec{color:#ff6b6b}
+button.rec.on{background:#8a2020;border-color:var(--red);color:#fff}
+table.takes td .on{margin-left:2px}
 </style>
 </head>
 <body>
@@ -180,6 +195,7 @@ button.dirty{border-color:var(--orange);color:var(--orange)}
   <button id="btnRecipe" title="Recept opslaan of laden">Recept &#8645;</button>
   <input id="recFile" type="file" accept=".json,application/json" hidden>
   <button id="btnAI" title="Claude aansturen via kopieren en plakken">AI &#8645;</button>
+  <button id="btnRec" class="rec" title="Voice-over opnemen terwijl een blok speelt (met koptelefoon)">&#9679; Opname</button>
   <span class="sp"></span>
   <label class="chk" title="Piek van elk geexporteerd blok naar -1 dBFS"><input type="checkbox" id="chkNorm"> normaliseer (&minus;1 dBFS)</label>
   <button id="btnExportAll" title="Alle blokken achter elkaar als losse WAV-downloads">Alle blokken exporteren</button>
@@ -1430,6 +1446,7 @@ function cancelJob(key, why, silent) {
     if (wk) { try { wk.terminate(); } catch (e) {} wk = null; wkSent = {}; }
   }
   if (why && !silent) say(why, 'warn');
+  if (job.o.onCancel) { try { job.o.onCancel(); } catch (e) {} }
   updateBusyUI(); pump();
 }
 function pump() {
@@ -1526,7 +1543,9 @@ async function failJob(job, message) {
       pump(); return;
     }
     say('Niet gerenderd: overlap niet geaccepteerd.', 'warn');
+    if (job.o.onFail) { try { job.o.onFail('overlap niet geaccepteerd'); } catch (e) {} }
   } else {
+    if (job.o.onFail) { try { job.o.onFail(message); } catch (e) {} }
     say('Renderen mislukt: ' + message, 'err');
     if (job.o.ui && blockById(job.o.ui)) { blockMsg[job.o.ui] = message; renderBlocks(); }
   }
@@ -1536,6 +1555,7 @@ async function failJob(job, message) {
 /* voortgang in UI */
 var spEl = $('sprog');
 function updateBusyUI() {
+  if (recUI) recUI.progress();
   // knoppen
   document.querySelectorAll('[data-key][data-ref]').forEach(function (el) {
     var job = jobs[el.dataset.key], busy = !!job && job.o.ref === el.dataset.ref;
@@ -1662,6 +1682,7 @@ function onState(rec) {
   for (var k in jobs) { if (blockJson(jobs[k].o.ui) !== jobs[k].blockJson) cancelJob(k, 'Render geannuleerd: het blok is gewijzigd.'); }
   renderSources(); renderMarkers(); renderBlocks(); renderVoiceCtl(); renderFields(); fitIfNeeded(); draw(); updateHistory();
   updateMissing(); updateDirtyUI();
+  if (recUI) recUI.refresh();
   setTimeout(refreshFit, 0);
 }
 function updateHistory() {
@@ -1753,8 +1774,9 @@ function isDirty() { return workSig(R) !== savedSig; }
 function markSaved() { savedSig = workSig(stateNow() || R); updateDirtyUI(); }
 function updateDirtyUI() { $('btnRecipe').classList.toggle('dirty', isDirty()); $('btnRecipe').title = isDirty() ? 'Recept opslaan of laden (er zijn niet-opgeslagen wijzigingen)' : 'Recept opslaan of laden'; }
 window.addEventListener('beforeunload', function (e) {
-  if (!isDirty()) return;
-  e.preventDefault(); e.returnValue = 'Er zijn niet-opgeslagen wijzigingen.'; return e.returnValue;
+  var nt = unsavedTakes().length;
+  if (!isDirty() && !nt) return;
+  e.preventDefault(); e.returnValue = nt ? 'Er zijn ' + nt + ' niet-opgeslagen opname(s).' : 'Er zijn niet-opgeslagen wijzigingen.'; return e.returnValue;
 });
 
 /* ---------- ontbrekende bronnen ---------- */
@@ -2156,6 +2178,26 @@ var BROWSER_CHECKS = [
   ['bcDl', 'Downloads (Blob-URL)', 'Sta downloads toe voor deze pagina; zonder dit kunnen WAV en recept niet worden opgeslagen.', function () {
     var url = URL.createObjectURL(new Blob(['x'])), ok = typeof url === 'string' && 'download' in document.createElement('a'); URL.revokeObjectURL(url);
     return ok ? Promise.resolve('beschikbaar') : Promise.reject(new Error('download-attribuut niet ondersteund'));
+  }],
+  ['bcMic', 'Microfoon (voice-over opnemen)', 'Zonder microfoontoegang werkt alles behalve opnemen. Gebruik een recente Chrome of Edge, sluit een microfoon aan en sta toegang toe als de browser erom vraagt.', function () {
+    if (!window.isSecureContext) return Promise.reject(new Error('pagina is geen secure context'));
+    var md = navigator.mediaDevices;
+    if (!(md && typeof md.getUserMedia === 'function')) return Promise.reject(new Error('navigator.mediaDevices.getUserMedia ontbreekt'));
+    if (typeof md.enumerateDevices !== 'function') return Promise.resolve('getUserMedia beschikbaar (apparaten niet op te sommen)');
+    return withTimeout(md.enumerateDevices(), 4000, 'apparaten').then(function (list) {
+      var n = list.filter(function (d) { return d.kind === 'audioinput'; }).length;
+      if (!n) throw new Error('geen microfoon gevonden');
+      return n + ' invoerapparaat/apparaten (toestemming wordt pas bij "Microfoon aan" gevraagd)';
+    });
+  }],
+  ['bcWorklet', 'AudioWorklet (verliesvrij en sample-nauwkeurig opnemen)', 'Zonder AudioWorklet neemt de editor op via ScriptProcessor: werkt, maar de timing is minder nauwkeurig; kalibreer de latency dan zeker.', function () {
+    var O = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!O) return Promise.reject(new Error('OfflineAudioContext ontbreekt'));
+    var c = new O(1, 128, 44100);
+    if (!c.audioWorklet || typeof AudioWorkletNode === 'undefined') return Promise.reject(new Error('AudioWorklet ontbreekt'));
+    return withTimeout(addWorkletModule(c, 'registerProcessor("af-probe",class extends AudioWorkletProcessor{process(){return true;}});'), 4000, 'AudioWorklet').then(function (how) {
+      new AudioWorkletNode(c, 'af-probe'); return 'module geladen (' + how + ')';
+    });
   }]
 ];
 function runBrowserChecks(list) {
@@ -2182,7 +2224,7 @@ function openHelpPanel() {
     }, function (e) { out.appendChild(el('div', { class: 'errbox', text: 'Zelftest kon niet draaien: ' + e.message })); say('Zelftest kon niet draaien: ' + e.message, 'err'); })
       .then(function () { btn.disabled = false; btn.classList.remove('busy'); bar.style.display = 'none'; });
   } });
-  var keys = [['Spatie', 'afspelen / stoppen'], ['I / O', 'in- / uitpunt op de cursor'], ['M', 'marker op de cursor'], ['L', 'loop aan/uit'], ['Enter', 'selectie naar het actieve blok'], ['Shift+Enter', 'selectie als stemfragment in het actieve blok'], ['Ctrl+Z / Ctrl+Y', 'ongedaan maken / opnieuw'], ['Esc', 'venster sluiten']];
+  var keys = [['Spatie', 'afspelen / stoppen (in het opnamepaneel: opnemen / stoppen)'], ['I / O', 'in- / uitpunt op de cursor'], ['M', 'marker op de cursor'], ['L', 'loop aan/uit'], ['Enter', 'selectie naar het actieve blok'], ['Shift+Enter', 'selectie als stemfragment in het actieve blok'], ['Ctrl+Z / Ctrl+Y', 'ongedaan maken / opnieuw'], ['Esc', 'venster sluiten']];
   var table = el('table', { class: 'fr', style: 'width:auto' }, keys.map(function (k) { return el('tr', null, [el('td', { html: '<b>' + esc(k[0]) + '</b>' }), el('td', { text: k[1] })]); }));
   var checks = el('ul', { class: 'stlist', id: 'bcList' }, BROWSER_CHECKS.map(function (c) { return el('li', { id: c[0], class: 'dim', text: '… ' + c[1] }); }));
   openPanel('Hulp — Audio Fit Tool v' + AF.version, [
@@ -2202,6 +2244,32 @@ function openHelpPanel() {
       'De stem moet volledig binnen het blok vallen. Overlappende stemfragmenten geven een waarschuwing; met <b>Accepteren</b> tel je ze bewust bij elkaar op.',
       '<b>Ducking</b> per blok: tijdens elke stem zakt de muziek naar <i>duck dB</i> (standaard &minus;6; 0 = uit); de daling begint <i>duck ms</i> v&oacute;&oacute;r de stem en het herstel eindigt zo lang erna. Gearceerde zones in de muziekrij tonen dit.'
     ])]),
+    hsec('hRec', 'Voice-over opnemen', [
+      el('h5', { text: 'Opnemen' }),
+      hul([
+        'Gebruik een <b>koptelefoon</b>: de muziek mag niet via luidsprekers in de microfoon lekken.',
+        'Kies <b>&#9679; Opname</b> in de kop, kies de microfoon en druk <b>Microfoon aan</b>; de browser vraagt eenmalig toestemming. De microfoon gaat pas aan na die klik en weer uit zodra je het paneel sluit. De keuze wordt onthouden.',
+        'De <b>niveaumeter</b> toont het gemiddelde niveau (balk, RMS) en de piek (witte streep), van &minus;60 tot 0 dBFS. <b>CLIP</b> licht op als de piek 0 dBFS raakt: zet de invoer zachter of ga verder van de microfoon. Mik op pieken rond &minus;12 tot &minus;6 dBFS.',
+        'Kies het <b>blok</b>, eventueel het <b>startpunt</b> in het blok (seconden of m:ss.mmm) en het aantal tellen <b>aftellen</b> (0&ndash;4; de piepjes klinken alleen in de koptelefoon en komen niet in de opname).',
+        'Druk <b>&#9679; Opnemen</b> (of Spatie): de tool rendert eerst het blok (voortgang zichtbaar), telt af en speelt dan het blok vanaf het startpunt terwijl de microfoon opneemt. Afspelen en opnemen starten op hetzelfde sample. Stoppen met <b>&#9632; Stop</b> of Spatie; aan het einde van het blok stopt de opname vanzelf.',
+        'Opties: <i>ducking uit</i> speelt de muziek zonder ducking; <i>oude stem stil</i> laat de bestaande stemfragmenten van het blok weg tijdens de opname (handig bij een nieuwe take).',
+        'De opname is ruwe, verliesvrije PCM (mono) zonder echo-onderdrukking, ruisonderdrukking of automatische versterking.'
+      ]),
+      el('h5', { text: 'Na het opnemen' }),
+      hul([
+        'De opname wordt gecorrigeerd voor de latency (het begin wordt weggeknipt), als bron <code>opname-&lt;blok&gt;-001.wav</code> (oplopend nummer) toegevoegd en direct als stemfragment geplaatst: anker = het muziekfragment waarin de opname begon, offset = starttijd &minus; begin van het anker, in/uit = de hele opname. Daarna trim en verschuif je hem zoals elk stemfragment. Wat na het einde van het blok valt, wordt afgeknipt.',
+        'Elke opname is een nieuwe <b>take</b>; een vorige take wordt niet overschreven. Overlappen ze, dan verschijnt de gewone overlap-waarschuwing. <b>Vervang vorige take</b> verwijdert het stemfragment waarmee deze take overlapt (of anders de vorige take in hetzelfde blok); Ongedaan maken zet het terug.',
+        '<b>Download</b> elke opname (of <b>Alle opnames</b>) en bewaar de WAV naast het recept: het recept koppelt bronnen op bestandsnaam en bevat zelf geen audio. Zolang er niet-opgeslagen opnames zijn, toont <b>&#9679; Opname</b> het aantal en waarschuwt de browser bij het sluiten van de pagina.',
+        'Sluit je het paneel tijdens een opname, dan wordt de opname eerst gestopt en bewaard.'
+      ]),
+      el('h5', { text: 'Latency kalibreren' }),
+      hul([
+        'Tussen afspelen en opnemen zit vertraging (latency) van uitvoer, invoer en browser, vaak 20&ndash;200 ms. Zonder kalibratie gebruikt de tool de schatting van de browser (&ldquo;geschat&rdquo;), die meestal te laag is.',
+        '<b>Kalibreren:</b> houd de koptelefoon (een oorschelp) tegen de microfoon, zet het volume <b>redelijk hoog</b>, zorg voor stilte en druk <b>Kalibreer</b>. De tool speelt 5 korte klikken (1 kHz, 5 ms, elke 0,6 s), neemt tegelijk op en zoekt bij elke klik het begin (eerste sample boven de helft van de piek, binnen &plusmn;300 ms van de verwachte plek). De latency is de mediaan van de gemeten vertragingen.',
+        'Liggen de metingen meer dan 5 ms uiteen of worden minder dan 3 klikken gevonden, dan meldt de tool &ldquo;niet betrouwbaar&rdquo;: zet het volume harder, houd de koptelefoon dichter bij de microfoon en probeer opnieuw. De vorige waarde blijft dan staan.',
+        'Het resultaat wordt per microfoon (en uitvoerapparaat) in deze browser onthouden. Met <b>&minus;10</b>/<b>+10</b> corrigeer je handmatig in stappen van 10 ms (bereik &plusmn;500 ms). Klinkt de stem na het opnemen te laat t.o.v. de muziek, verhoog dan de latency; te vroeg, verlaag hem. Een precisie van 0,1 s volstaat voor voice-over.'
+      ])
+    ]),
     hsec('hAI', 'AI-aansturing', [
       el('h5', { text: 'Route A: kopieren en plakken (Claude-chat)' }),
       hul(['Kies <b>AI &#8645;</b> &rarr; <b>Kopieer AI-context</b> en plak dit in een Claude-chat. Beschrijf in gewone taal wat er moet gebeuren.',
@@ -2213,6 +2281,7 @@ function openHelpPanel() {
         'Begin met <code>node audiofit-cli.mjs doctor</code> en <code>node audiofit-cli.mjs help</code>.'])]),
     hsec('hReq', 'Vereisten', [hul([
       '<b>Editor (deze pagina):</b> niets installeren. Werkt in een recente Chrome, Edge of Firefox, offline. MP3 en WAV worden door de browser zelf gedecodeerd.',
+      '<b>Voice-over opnemen:</b> een microfoon, een koptelefoon, toestemming voor de microfoon en bij voorkeur AudioWorklet. Getest in Chromium (ook via file://); Firefox is niet getest.',
       '<b>Alleen voor aansturing door Claude Code via <code>audiofit-cli.mjs</code>:</b> Node.js 18 of nieuwer (nodejs.org) en, voor MP3-bronnen, ffmpeg (ffmpeg.org). Controleren: <code>node audiofit-cli.mjs doctor</code>. Installeren op Windows: <code>winget search nodejs</code> en <code>winget search ffmpeg</code>, en installeer daarna het gevonden pakket.',
       'Een webpagina kan niet controleren wat er op de computer geïnstalleerd is; gebruik daarvoor <code>node audiofit-cli.mjs doctor</code>. Deze pagina doet geen netwerkverkeer en opent geen links.'
     ]), el('h5', { text: 'Browsercheck (nu uitgevoerd)' }), checks]),
@@ -2284,12 +2353,547 @@ async function exportAll() {
 }
 $('btnExportAll').onclick = exportAll;
 
+/* ====================================================================
+ * Fase 5: voice-over-recorder (§6.11)
+ * ==================================================================== */
+var LS_MIC = 'audiofit.micId', LS_LAT = 'audiofit.latency';
+function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+var CAL = { clicks: 5, intervalS: 0.6, burstMs: 5, freq: 1000, leadS: 0.3, tailS: 0.9, windowMs: 300, maxSpreadMs: 5, minFound: 3 };
+var LAT_CORR_MAX = 500;
+
+// Detectie van klik-onsets (los testbaar). x: Float32Array (opname), expected: verwachte sample-index per klik in x.
+// Per klik: venster ±windowMs rond de verwachte plek, piek zoeken, onset = eerste sample boven 50% van die piek.
+// Klik telt alleen als de piek duidelijk boven de ruis (mediaan |x| in het venster) en boven minPeak ligt.
+function detectClickLatency(x, sr, expected, opts) {
+  opts = opts || {};
+  var win = Math.round((opts.windowMs != null ? opts.windowMs : CAL.windowMs) / 1000 * sr);
+  var minPeak = opts.minPeak != null ? opts.minPeak : 0.01, snr = opts.snr != null ? opts.snr : 8;
+  var maxSpread = opts.maxSpreadMs != null ? opts.maxSpreadMs : CAL.maxSpreadMs, minFound = opts.minFound != null ? opts.minFound : CAL.minFound;
+  var clicks = [];
+  expected.forEach(function (e, k) {
+    var a = Math.max(0, Math.round(e) - win), b = Math.min(x.length, Math.round(e) + win);
+    if (b - a < 32) { clicks.push({ k: k, found: false, why: 'buiten de opname' }); return; }
+    var pk = 0, i;
+    for (i = a; i < b; i++) { var v = x[i] < 0 ? -x[i] : x[i]; if (v > pk) pk = v; }
+    var ab = new Float32Array(b - a);
+    for (i = a; i < b; i++) ab[i - a] = x[i] < 0 ? -x[i] : x[i];
+    ab.sort();
+    var noise = ab[ab.length >> 1] * 1.4826;
+    if (pk < minPeak || pk < snr * noise) { clicks.push({ k: k, found: false, peak: pk, noise: noise, why: pk < minPeak ? 'te zacht' : 'niet boven de ruis' }); return; }
+    var thr = pk * 0.5, on = -1;
+    for (i = a; i < b; i++) { if ((x[i] < 0 ? -x[i] : x[i]) >= thr) { on = i; break; } }
+    clicks.push({ k: k, found: true, onset: on, expected: e, ms: (on - e) / sr * 1000, peak: pk, noise: noise });
+  });
+  var f = clicks.filter(function (c) { return c.found; }), ms = f.map(function (c) { return c.ms; }).sort(function (p, q) { return p - q; });
+  var med = ms.length ? (ms.length % 2 ? ms[(ms.length - 1) / 2] : (ms[ms.length / 2 - 1] + ms[ms.length / 2]) / 2) : null;
+  var spread = ms.length ? ms[ms.length - 1] - ms[0] : null;
+  var reason = '';
+  if (f.length < minFound) reason = 'slechts ' + f.length + ' van ' + expected.length + ' klikken gevonden (minstens ' + minFound + ' nodig)';
+  else if (spread > maxSpread) reason = 'metingen liggen ' + spread.toFixed(1) + ' ms uiteen (maximaal ' + maxSpread + ' ms)';
+  return { ok: !reason, latencyMs: med == null ? null : Math.round(med * 10) / 10, spreadMs: spread == null ? null : Math.round(spread * 10) / 10,
+    found: f.length, total: expected.length, clicks: clicks, reason: reason };
+}
+
+// Opnamekern: draait in de AudioWorklet (via toString) of in de ScriptProcessor-terugval.
+// Neemt mono op (gemiddelde van de invoerkanalen) vanaf contextframe m.frame tot m.stopFrame (exclusief) of 'stop';
+// meldt het contextframe van de eerste opgenomen sample ('first') zodat de aanroeper verwacht-vs-opgenomen kan rekenen.
+function makeRecCore(post) {
+  var rec = false, startAt = 0, stopAt = -1, buf = new Float32Array(4096), n = 0, first = -1, total = 0, lp = 0, ls = 0, lc = 0, id = 0;
+  function flush() { if (n) { var c = buf.slice(0, n); post({ type: 'data', id: id, data: c }, [c.buffer]); n = 0; } }
+  function finish(frame) { if (!rec) return; flush(); rec = false; post({ type: 'stopped', id: id, first: first, count: total, endFrame: frame }); }
+  return {
+    msg: function (m, frame) {
+      if (m.cmd === 'start') { rec = true; id = m.id; startAt = m.frame; stopAt = m.stopFrame > 0 ? m.stopFrame : -1; first = -1; total = 0; n = 0; }
+      else if (m.cmd === 'stop') finish(frame);
+    },
+    process: function (inp, len, frame) {
+      var nc = inp ? inp.length : 0;
+      for (var i = 0; i < len; i++) {
+        var v = 0; for (var c = 0; c < nc; c++) v += inp[c][i];
+        if (nc > 1) v /= nc;
+        var a = v < 0 ? -v : v; if (a > lp) lp = a; ls += v * v; lc++;
+        if (rec) {
+          var f = frame + i;
+          if (stopAt >= 0 && f >= stopAt) finish(f);
+          else if (f >= startAt) { if (first < 0) first = f; buf[n++] = v; total++; if (n === buf.length) flush(); }
+        }
+      }
+      if (lc >= 2048) { post({ type: 'level', peak: lp, rms: Math.sqrt(ls / lc), frame: frame }); lp = 0; ls = 0; lc = 0; }
+    }
+  };
+}
+var REC_WORKLET = 'var makeRecCore=' + makeRecCore.toString() + ';\n' +
+  'class AFRec extends AudioWorkletProcessor{constructor(){super();var p=this.port;this.core=makeRecCore(function(m,t){p.postMessage(m,t||[]);});' +
+  'p.onmessage=(e)=>{this.core.msg(e.data,currentFrame);};}' +
+  'process(inputs){var inp=inputs[0]||[];this.core.process(inp,inp.length?inp[0].length:128,currentFrame);return true;}}\n' +
+  'registerProcessor("af-rec",AFRec);';
+
+var mic = { stream: null, track: null, srcNode: null, node: null, sink: null, kind: '', deviceId: '', label: '', settings: {}, opening: null,
+  lvl: { peak: 0, rms: 0, shownPeak: 0, clipUntil: 0, n: 0 }, cap: null, capSeq: 0, devices: [] };
+var recTakes = [];          // {name, block, blockName, voice, dur, start, anchor, offset, saved, diag}
+var recSession = null;      // lopende opname
+var recUI = null;           // open paneel
+var recLast = null;         // diagnose laatste opname/kalibratie (voor tests)
+
+function unsavedTakes() { return recTakes.filter(function (t) { return !t.saved && hasAudio(t.name); }); }
+function updateRecBtn() {
+  var n = unsavedTakes().length, b = $('btnRec');
+  b.innerHTML = '&#9679; Opname' + (n ? ' (' + n + ')' : '');
+  b.classList.toggle('dirty', n > 0);
+  b.setAttribute(b.hasAttribute('data-tip') ? 'data-tip' : 'title', n ? n + ' niet-opgeslagen opname(s): open het paneel om ze te downloaden' : 'Voice-over opnemen terwijl een blok speelt (met koptelefoon)');
+}
+
+// Module uit een Blob; via file:// weigert Chromium blob:null-modules, dan een data:-URL (zelfde code, geen netwerk).
+function addWorkletModule(c, code) {
+  var url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+  return c.audioWorklet.addModule(url).then(function () { URL.revokeObjectURL(url); return 'Blob'; }, function () {
+    URL.revokeObjectURL(url);
+    return c.audioWorklet.addModule('data:text/javascript,' + encodeURIComponent(code)).then(function () { return 'data-URL'; });
+  });
+}
+async function workletReady() {
+  if (!ctx.audioWorklet || typeof AudioWorkletNode === 'undefined') throw new Error('AudioWorklet ontbreekt');
+  if (!ctx.__afRec) ctx.__afRec = addWorkletModule(ctx, REC_WORKLET).then(function (how) { mic.moduleFrom = how; }, function (e) { ctx.__afRec = null; throw e; });
+  return ctx.__afRec;
+}
+function micMsg(m) {
+  if (m.type === 'level') { mic.lvl.peak = m.peak; mic.lvl.rms = m.rms; mic.lvl.n++; if (m.peak >= 0.999) mic.lvl.clipUntil = Date.now() + 2000; if (recUI) recUI.meter(); return; }
+  var c = mic.cap; if (!c || m.id !== c.id) return;
+  if (m.type === 'data') { c.chunks.push(m.data); c.len += m.data.length; }
+  else if (m.type === 'stopped') {
+    var all = new Float32Array(c.len), o = 0;
+    c.chunks.forEach(function (ch) { all.set(ch, o); o += ch.length; });
+    mic.cap = null; c.resolve({ first: m.first, count: m.count, endFrame: m.endFrame, data: all });
+  }
+}
+async function micOpen(deviceId) {
+  var md = navigator.mediaDevices;
+  if (!(md && md.getUserMedia)) throw new Error('deze browser geeft geen toegang tot de microfoon (navigator.mediaDevices ontbreekt)');
+  await ensureCtx();
+  micClose();
+  var cons = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  if (deviceId) cons.deviceId = { exact: deviceId };
+  var stream;
+  try { stream = await md.getUserMedia({ audio: cons }); }
+  catch (e) {
+    if (deviceId && e && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) { delete cons.deviceId; stream = await md.getUserMedia({ audio: cons }); }
+    else if (e && e.name === 'NotAllowedError') throw new Error('toegang tot de microfoon geweigerd; sta de microfoon toe in de adresbalk en probeer opnieuw');
+    else if (e && e.name === 'NotFoundError') throw new Error('geen microfoon gevonden');
+    else throw e;
+  }
+  var tr = stream.getAudioTracks()[0];
+  mic.stream = stream; mic.track = tr; mic.settings = tr && tr.getSettings ? tr.getSettings() : {};
+  mic.deviceId = mic.settings.deviceId || deviceId || 'default'; mic.label = (tr && tr.label) || 'microfoon';
+  mic.srcNode = ctx.createMediaStreamSource(stream);
+  mic.sink = ctx.createGain(); mic.sink.gain.value = 0; mic.sink.connect(ctx.destination);
+  var node = null;
+  try {
+    await workletReady();
+    node = new AudioWorkletNode(ctx, 'af-rec', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    node.port.onmessage = function (e) { micMsg(e.data); };
+    node.cmd = function (m) { node.port.postMessage(m); };
+    mic.kind = 'AudioWorklet';
+  } catch (e) {
+    // terugval: ScriptProcessor (minder nauwkeurig; de kalibratie vangt een vaste afwijking op)
+    var sp = ctx.createScriptProcessor(2048, 2, 1), core = makeRecCore(function (m) { setTimeout(function () { micMsg(m); }, 0); });
+    sp.onaudioprocess = function (ev) {
+      var ib = ev.inputBuffer, ch = []; for (var c = 0; c < ib.numberOfChannels; c++) ch.push(ib.getChannelData(c));
+      sp.lastFrame = Math.round(ev.playbackTime * ctx.sampleRate) - ib.length;
+      core.process(ch, ib.length, sp.lastFrame);
+    };
+    sp.cmd = function (m) { core.msg(m, sp.lastFrame || Math.round(ctx.currentTime * ctx.sampleRate)); };
+    node = sp; mic.kind = 'ScriptProcessor';
+  }
+  mic.node = node;
+  mic.srcNode.connect(node); node.connect(mic.sink);
+  if (tr) tr.onended = function () { if (mic.track === tr) { say('De microfoon is weggevallen.', 'err'); recAbort('microfoon weggevallen'); micClose(); if (recUI) recUI.refresh(); } };
+  lsSet(LS_MIC, mic.deviceId);
+  try { mic.devices = (await md.enumerateDevices()).filter(function (d) { return d.kind === 'audioinput'; }); } catch (e) { mic.devices = []; }
+  say('Microfoon aan: ' + mic.label + ' (' + mic.kind + ', ' + ctx.sampleRate + ' Hz).', 'ok');
+}
+function micClose() {
+  if (mic.cap) { try { mic.cap.resolve(null); } catch (e) {} mic.cap = null; }
+  if (mic.stream) mic.stream.getTracks().forEach(function (t) { try { t.onended = null; t.stop(); } catch (e) {} });
+  [mic.srcNode, mic.node, mic.sink].forEach(function (n) { if (n) { try { n.disconnect(); } catch (e) {} } });
+  if (mic.node && mic.node.port) { try { mic.node.port.onmessage = null; mic.node.port.close(); } catch (e) {} }
+  if (mic.node && mic.node.onaudioprocess) mic.node.onaudioprocess = null;
+  mic.stream = mic.track = mic.srcNode = mic.node = mic.sink = null;
+  mic.kind = ''; mic.lvl.peak = mic.lvl.rms = mic.lvl.shownPeak = 0;
+}
+function micIsOpen() { return !!(mic.stream && mic.node); }
+async function micEnsure() {
+  if (micIsOpen()) return;
+  var sel = recUI && recUI.micSel ? recUI.micSel.value : (lsGet(LS_MIC) || '');
+  await micOpen(sel || lsGet(LS_MIC) || '');
+  if (recUI) recUI.refresh();
+}
+// Neem op van contextframe startF tot stopF (of tot capStop()). Resultaat: {first, data, ...} of null bij afbreken.
+function capStart(startF, stopF) {
+  if (mic.cap) throw new Error('er loopt al een opname');
+  var id = ++mic.capSeq, c = { id: id, chunks: [], len: 0 };
+  c.done = new Promise(function (res) { c.resolve = res; });
+  mic.cap = c;
+  mic.node.cmd({ cmd: 'start', id: id, frame: startF, stopFrame: stopF || 0 });
+  return c;
+}
+function capStop() { if (mic.cap && mic.node) mic.node.cmd({ cmd: 'stop' }); }
+
+/* --- latency per microfoon (+ uitvoer) --- */
+function sinkKey() { return ctx && typeof ctx.sinkId === 'string' && ctx.sinkId ? ctx.sinkId : 'default'; }
+function latKey() { return (mic.deviceId || lsGet(LS_MIC) || 'default') + '|' + sinkKey(); }
+function latStore() { try { var o = JSON.parse(lsGet(LS_LAT) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+function latEntry() { return latStore()[latKey()] || { measured: null, corr: 0 }; }
+function latSave(en) { var st = latStore(); st[latKey()] = en; lsSet(LS_LAT, JSON.stringify(st)); }
+function latEstimateMs() {
+  var s = ctx ? (ctx.baseLatency || 0) + (ctx.outputLatency || 0) : 0;
+  if (mic.settings && typeof mic.settings.latency === 'number') s += mic.settings.latency;
+  return Math.round(s * 1000);
+}
+function latInfo() {
+  var en = latEntry(), base = en.measured != null ? en.measured : latEstimateMs();
+  return { base: base, corr: en.corr || 0, ms: Math.max(0, base + (en.corr || 0)), measured: en.measured != null, at: en.at || null };
+}
+function latNudge(d) {
+  var en = latEntry(); en.corr = clamp((en.corr || 0) + d, -LAT_CORR_MAX, LAT_CORR_MAX); latSave(en);
+  if (recUI) recUI.refresh();
+}
+
+/* --- kalibratie (loopback) --- */
+async function calibrate() {
+  if (recSession) return;
+  await micEnsure();
+  var sr = ctx.sampleRate, burst = Math.round(CAL.burstMs / 1000 * sr), exp = [];
+  var len = Math.round((CAL.leadS + CAL.intervalS * (CAL.clicks - 1) + CAL.tailS) * sr);
+  var buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  for (var k = 0; k < CAL.clicks; k++) {
+    var p = Math.round((CAL.leadS + k * CAL.intervalS) * sr); exp.push(p);
+    for (var i = 0; i < burst; i++) d[p + i] = 0.9 * Math.sin(2 * Math.PI * CAL.freq * i / sr);
+  }
+  var F0 = Math.ceil((ctx.currentTime + 0.25) * sr);
+  recSession = { kind: 'cal', phase: 'cal', t0: F0 / sr };
+  if (recUI) recUI.refresh();
+  var r = null;
+  try {
+    var cap = capStart(F0, F0 + len);
+    var node = ctx.createBufferSource(); node.buffer = buf; node.connect(ctx.destination); node.start(F0 / sr);
+    recSession.nodes = [node];
+    r = await withTimeout(cap.done, (len / sr + 4) * 1000, 'kalibratie');
+  } catch (e) { say('Kalibratie mislukt: ' + (e && e.message || e), 'err'); }
+  recSession = null;
+  if (!r) { if (recUI) recUI.refresh(); return null; }
+  var off = F0 - r.first;
+  var res = detectClickLatency(r.data, sr, exp.map(function (p) { return p + off; }));
+  recLast = { kind: 'cal', F0: F0, first: r.first, res: res };
+  if (res.ok) {
+    var en = latEntry(); en.measured = Math.round(res.latencyMs); en.corr = 0; en.at = new Date().toISOString(); latSave(en);
+    say('Latency gemeten: ' + res.latencyMs.toFixed(1) + ' ms (' + res.found + '/' + res.total + ' klikken, spreiding ' + res.spreadMs.toFixed(1) + ' ms); onthouden voor ' + mic.label + '.', 'ok');
+  } else {
+    say('Kalibratie niet betrouwbaar: ' + res.reason + '. Zet het volume harder en houd de koptelefoon dichter bij de microfoon.', 'warn');
+  }
+  if (recUI) { recUI.calMsg(res); recUI.refresh(); }
+  return res;
+}
+
+/* --- opnemen --- */
+function recName(blockName) {
+  var base = 'opname-' + (String(blockName || 'blok').trim().replace(/[\\\/:*?"<>|]/g, '_') || 'blok') + '-', max = 0;
+  var names = R.sources.map(function (s) { return s.name; }).concat(recTakes.map(function (t) { return t.name; }));
+  names.forEach(function (n) { if (n.indexOf(base) === 0) { var m = /^(\d+)\.wav$/i.exec(n.slice(base.length)); if (m) max = Math.max(max, +m[1]); } });
+  return base + ('00' + (max + 1)).slice(-3) + '.wav';
+}
+function beep(t, f) {
+  var o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.value = f || 880; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.005); g.gain.setValueAtTime(0.25, t + 0.06); g.gain.linearRampToValueAtTime(0, t + 0.08);
+  o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.1);
+  return o;
+}
+async function recStart(o) {
+  if (recSession) return false;
+  var b = blockById(o.block);
+  if (!b) { say('Kies een blok om bij op te nemen.', 'warn'); return false; }
+  if (!(b.fragments || []).length) { say('Blok "' + b.name + '" heeft nog geen muziek; de stem moet aan een muziekfragment hangen.', 'warn'); return false; }
+  if (!checkSources(b)) return false;
+  var T = b.targetDuration, sp = clamp(o.start || 0, 0, T);
+  if (sp > T - 0.1) { say('Startpunt ligt aan het einde van het blok (' + fmt(T) + ').', 'warn'); return false; }
+  try { await micEnsure(); } catch (e) { say('Microfoon: ' + (e && e.message || e), 'err'); return false; }
+  stopPlay();
+  var s = recSession = { kind: 'rec', phase: 'render', block: b.id, blockName: b.name, startPt: sp, count: clamp(o.count | 0, 0, 4), beat: 0.75,
+    noDuck: !!o.noDuck, noVoice: !!o.noVoice, nodes: [], key: 'rec#' + b.id };
+  if (recUI) recUI.refresh();
+  startRender({ key: s.key, ui: b.id, ref: 'rec', purpose: 'record',
+    make: function () { var cb = blockById(b.id); if (!cb) return null; var c = clone(cb); if (s.noDuck) c.duckDb = 0; if (s.noVoice) c.voice = []; return c; },
+    onDone: function (res) { if (recSession === s) recGo(s, res); },
+    onFail: function (m) { if (recSession === s) { recSession = null; say('Opname niet gestart: ' + m, 'err'); if (recUI) recUI.refresh(); } },
+    onCancel: function () { if (recSession === s && s.phase === 'render') { recSession = null; if (recUI) recUI.refresh(); } } });
+  return true;
+}
+function recGo(s, res) {
+  var sr = ctx.sampleRate, buf = toBuf(res), lat = latInfo();
+  var remaining = Math.max(0, buf.duration - s.startPt);
+  var t0F = Math.ceil((ctx.currentTime + 0.2 + s.count * s.beat) * sr), t0 = t0F / sr;
+  s.sr = sr; s.t0F = t0F; s.t0 = t0; s.latMs = lat.ms; s.latSamples = Math.round(lat.ms / 1000 * sr);
+  // automatisch stoppen aan het einde van het blok (+ latency, zodat het laatste stuk nog binnenkomt)
+  s.stopF = t0F + Math.round(remaining * sr) + Math.max(0, s.latSamples) + Math.round(0.02 * sr);
+  for (var k = 0; k < s.count; k++) s.nodes.push(beep(t0 - (s.count - k) * s.beat, k === s.count - 1 ? 1320 : 880));
+  s.cap = capStart(t0F, s.stopF);
+  var node = ctx.createBufferSource(); node.buffer = buf; node.connect(ctx.destination);
+  node.start(t0, s.startPt);
+  s.nodes.push(node); s.play = node;
+  s.phase = s.count ? 'countdown' : 'rec';
+  s.cap.done.then(function (r) { recFinish(s, r); });
+  if (recUI) recUI.refresh();
+  s.timer = setInterval(function () { if (recSession !== s) { clearInterval(s.timer); return; } if (s.phase === 'countdown' && ctx.currentTime >= s.t0) { s.phase = 'rec'; if (recUI) recUI.refresh(); } if (recUI) recUI.status(); }, 100);
+}
+function recStopNodes(s) { (s.nodes || []).forEach(function (n) { try { n.stop(); } catch (e) {} try { n.disconnect(); } catch (e) {} }); s.nodes = []; if (s.timer) clearInterval(s.timer); }
+// Stoppen (knop, Spatie, paneel dicht). Vóór het eerste opgenomen sample: afbreken zonder take.
+function recStop() {
+  var s = recSession; if (!s || s.kind !== 'rec') return;
+  if (s.phase === 'render') { cancelJob(s.key, null, true); recSession = null; say('Opname geannuleerd.', 'warn'); if (recUI) recUI.refresh(); return; }
+  if (s.phase === 'countdown' && ctx.currentTime < s.t0) { s.discard = true; }
+  s.phase = 'stopping'; recStopNodes(s); capStop();
+  if (recUI) recUI.refresh();
+}
+function recAbort(why) {
+  var s = recSession; if (!s) return;
+  if (s.kind === 'rec' && s.phase === 'render') cancelJob(s.key, null, true);
+  s.discard = true; recStopNodes(s); capStop(); recSession = null;
+  if (why) say('Opname afgebroken: ' + why + '.', 'warn');
+}
+function recFinish(s, r) {
+  recStopNodes(s);
+  if (recSession === s) recSession = null;
+  if (!r || s.discard) { if (s.discard && r !== null) say('Opname geannuleerd (gestopt tijdens het aftellen).', 'warn'); if (recUI) recUI.refresh(); return; }
+  var sr = s.sr, k = s.t0F + s.latSamples - r.first, data = r.data, startT = s.startPt;
+  // k = aantal samples dat vóór het blokbegin (startpunt) ligt: latency + eventuele vroege start
+  if (k >= 0) data = data.subarray(Math.min(k, data.length)); else startT = s.startPt + (-k) / sr;
+  var b = blockById(s.block);
+  if (!b) { say('Het blok van de opname bestaat niet meer; opname weggegooid.', 'err'); if (recUI) recUI.refresh(); return; }
+  var maxLen = Math.floor((b.targetDuration - startT - 0.001) * sr), cut = 0;
+  if (data.length > maxLen) { cut = data.length - Math.max(0, maxLen); data = data.subarray(0, Math.max(0, maxLen)); }
+  recLast = { kind: 'rec', t0F: s.t0F, first: r.first, expectedFirst: s.t0F, startOffsetSamples: r.first - s.t0F, latMs: s.latMs, latSamples: s.latSamples,
+    trimmed: Math.max(0, k), recorded: r.data.length, kept: data.length, cutEnd: cut, startT: startT, sr: sr };
+  if (data.length < 0.05 * sr) { say('Opname te kort (' + Math.round(data.length / sr * 1000) + ' ms na de latency-correctie); niets toegevoegd.', 'warn'); if (recUI) recUI.refresh(); return; }
+  var name = recName(b.name), chans = [new Float32Array(data)];
+  try { name = AF.attachAudio(name, { sampleRate: sr, channels: chans }) || name; }
+  catch (e) { say('Opname kon niet worden toegevoegd: ' + e.message, 'err'); if (recUI) recUI.refresh(); return; }
+  refreshFit();
+  var L = layoutOf(blockById(b.id)), anc = null;
+  L.frags.forEach(function (q) { if (q.start <= startT + 1e-9 && (!anc || q.start >= anc.start)) anc = q; });
+  anc = anc || L.frags[0];
+  var off = Math.round((startT - anc.start) * 1e6) / 1e6, sd = (src(name) || {}).duration || chans[0].length / sr;
+  var rv = run('add_voice', { block: b.id, source: name, 'in': 0, out: sd, anchor: anc.f.id, offset: off, snap: false });
+  var take = { name: name, block: b.id, blockName: b.name, voice: rv.ok ? rv.result.id : null, dur: sd, start: startT, anchor: anc.f.id, offset: off, saved: false, diag: recLast };
+  recTakes.push(take); recLast.take = take;
+  if (rv.ok) {
+    pick = { block: b.id, kind: 'v', id: take.voice }; activeBlock = b.id; renderBlocks();
+    say('Opname ' + name + ' (' + sd.toFixed(2) + ' s) toegevoegd als stem ' + take.voice + ' in "' + b.name + '" op ' + startT.toFixed(3) + ' s (anker ' + anc.f.id + ', offset ' + off.toFixed(3) + ' s). Niet opgeslagen opname: download de WAV.', 'warn');
+  } else say('Opname ' + name + ' toegevoegd als bron, maar niet als stem: ' + rv.error, 'err');
+  updateRecBtn();
+  if (recUI) recUI.refresh();
+}
+function downloadTake(t) {
+  var a = AF.getAudio(t.name);
+  if (!a) { say('Audio van ' + t.name + ' is niet meer beschikbaar.', 'err'); return false; }
+  var bytes = AF.wav.encode(a.channels, a.sampleRate);
+  downloadBytes(t.name, bytes); t.saved = true;
+  window.__lastRecDownload = { name: t.name, bytes: bytes.length };
+  say('Opname gedownload: ' + t.name + '. Bewaar hem naast het recept.', 'ok');
+  updateRecBtn(); if (recUI) recUI.refresh();
+  return true;
+}
+async function downloadAllTakes() {
+  var list = recTakes.filter(function (t) { return hasAudio(t.name); });
+  if (!list.length) { say('Er zijn geen opnames.', 'warn'); return; }
+  for (var i = 0; i < list.length; i++) { downloadTake(list[i]); await pause(300); }
+}
+function replacePrevTake(t) {
+  var b = blockById(t.block), v = b && findBy(b.voice, 'id', t.voice);
+  if (!v) { say('Stem ' + (t.voice || '?') + ' van deze take bestaat niet meer.', 'warn'); return; }
+  refreshFit();
+  var bi = fitInfo.blocks[b.id] || {}, ids = [];
+  (bi.overlaps || []).forEach(function (o) { if (o.a === t.voice && ids.indexOf(o.b) < 0) ids.push(o.b); else if (o.b === t.voice && ids.indexOf(o.a) < 0) ids.push(o.a); });
+  if (!ids.length) {
+    var prev = recTakes.slice(0, recTakes.indexOf(t)).reverse().filter(function (q) { return q.block === t.block && q.voice && findBy(b.voice, 'id', q.voice); })[0];
+    if (prev) ids.push(prev.voice);
+  }
+  if (!ids.length) { say('Geen vorige take gevonden die door ' + t.voice + ' vervangen kan worden.', 'warn'); return; }
+  var r = AF.execAll(ids.map(function (id) { return { cmd: 'delete_voice', args: { voice: id } }; }));
+  if (!r.ok) { say(r.error, 'err'); return; }
+  t.replaced = ids;
+  say('Vorige take vervangen: stem ' + ids.join(', ') + ' verwijderd (Ongedaan maken zet ' + (ids.length > 1 ? 'ze' : 'hem') + ' terug).', 'ok');
+  if (recUI) recUI.refresh();
+}
+
+/* --- paneel --- */
+function dbTxt(v) { return v > 0 ? (20 * Math.log(v) / Math.LN10).toFixed(1) : '-inf'; }
+function dbPct(v) { var d = v > 0 ? 20 * Math.log(v) / Math.LN10 : -100; return clamp((d + 60) / 60, 0, 1) * 100; }
+function openRecPanel() {
+  var blkSel = el('select', { id: 'recBlock', title: 'Blok waarbij je opneemt' });
+  var micSel = el('select', { id: 'recMic', title: 'Microfoon (wordt onthouden); wisselen opent de gekozen microfoon opnieuw', style: 'max-width:260px' });
+  var micBtn = el('button', { id: 'recMicBtn', title: 'Microfoon openen of sluiten (sluiten gebeurt ook als je dit paneel sluit)' });
+  var meter = el('div', { class: 'meter off', id: 'recMeter', title: 'Niveau van -60 tot 0 dBFS: balk = RMS, witte streep = piek' }, [el('div', { class: 'rms' }), el('div', { class: 'pk' })]);
+  [-48, -36, -24, -12, -6].forEach(function (d) { meter.appendChild(el('div', { class: 'tk', style: 'left:' + ((d + 60) / 60 * 100) + '%' })); });
+  var mdb = el('span', { class: 'mdb', id: 'recDb', title: 'Piek in dBFS' });
+  var clipEl = el('span', { class: 'clip', id: 'recClip', text: 'CLIP', title: 'Licht 2 s op als de piek 0 dBFS raakt: invoer zachter zetten' });
+  var latTxt = el('span', { id: 'recLat', class: 'rstat' });
+  var latM = el('button', { id: 'recLatMinus', text: '−10', title: 'Latency 10 ms lager (stem komt later te staan)', onclick: function () { latNudge(-10); } });
+  var latP = el('button', { id: 'recLatPlus', text: '+10', title: 'Latency 10 ms hoger (stem komt eerder te staan)', onclick: function () { latNudge(10); } });
+  var calBtn = el('button', { id: 'recCal', text: 'Kalibreer', title: 'Koptelefoon tegen de microfoon, volume redelijk hoog: meet de latency met 5 klikken' });
+  var calOut = el('span', { id: 'recCalMsg', class: 'dim' });
+  var startIn = el('input', { type: 'text', id: 'recStart', class: 'tf', value: fmt(0), title: 'Startpunt in het blok (m:ss.mmm of seconden)', style: 'width:80px' });
+  var cntSel = el('select', { id: 'recCount', title: 'Aantal tellen aftellen; de piepjes klinken alleen in de koptelefoon' }, [0, 1, 2, 3, 4].map(function (n) { return el('option', { value: n, text: n + ' tel' + (n === 1 ? '' : 'len') }); }));
+  var noDuck = el('input', { type: 'checkbox', id: 'recNoDuck', title: 'Muziek zonder ducking afspelen tijdens de opname' });
+  var noVoice = el('input', { type: 'checkbox', id: 'recNoVoice', title: 'Bestaande stemfragmenten van het blok niet afspelen tijdens de opname' });
+  var recBtn = el('button', { id: 'recGo', class: 'rec', title: 'Opnemen terwijl het blok speelt; nogmaals (of Spatie) = stoppen' });
+  var stat = el('span', { id: 'recStatus', class: 'rstat' });
+  var prog = el('div', { class: 'sprog', id: 'recProg', style: 'display:none' }, [el('div', { class: 'bar' }, [el('i')]), el('span', { class: 'pct' }), el('span', { class: 'lab' })]);
+  var list = el('div', { id: 'recTakes' });
+  var allBtn = el('button', { id: 'recAll', text: 'Alle opnames downloaden', title: 'Alle opnames als losse WAV-bestanden downloaden', onclick: downloadAllTakes });
+  var helpBtn = el('button', { id: 'recHelp', text: '?', title: 'Uitleg over opnemen en kalibreren', onclick: function () { if (recSession) return; closePanel(); openHelpPanel(); var h = document.getElementById('hRec'); if (h) h.scrollIntoView(); } });
+  var cnt0 = lsGet('audiofit.recCount'); cntSel.value = cnt0 != null && /^[0-4]$/.test(cnt0) ? cnt0 : '2';
+  cntSel.onchange = function () { lsSet('audiofit.recCount', cntSel.value); };
+
+  function fillBlocks() {
+    var prev = blkSel.value || activeBlock; blkSel.innerHTML = '';
+    R.blocks.forEach(function (b) { blkSel.appendChild(el('option', { value: b.id, text: b.name + ' (' + Number(b.targetDuration).toFixed(1) + ' s)' })); });
+    if (prev && blockById(prev)) blkSel.value = prev;
+  }
+  function fillMics() {
+    var want = mic.deviceId || lsGet(LS_MIC) || '', prev = micSel.value; micSel.innerHTML = '';
+    var devs = mic.devices.length ? mic.devices : [];
+    if (!devs.length) micSel.appendChild(el('option', { value: want, text: want && want !== 'default' ? 'onthouden microfoon' : 'standaardmicrofoon' }));
+    devs.forEach(function (d, i) { micSel.appendChild(el('option', { value: d.deviceId, text: d.label || ('microfoon ' + (i + 1)) })); });
+    micSel.value = want || prev; if (micSel.selectedIndex < 0) micSel.selectedIndex = 0;
+  }
+  async function guard(fn) { try { await fn(); } catch (e) { say('Opname: ' + (e && e.message || e), 'err'); } ui.refresh(); }
+  micBtn.onclick = function () { if (recSession) return; if (micIsOpen()) { micClose(); say('Microfoon uit.'); ui.refresh(); } else guard(function () { return micOpen(micSel.value); }); };
+  micSel.onchange = function () { lsSet(LS_MIC, micSel.value); if (micIsOpen() && !recSession) guard(function () { return micOpen(micSel.value); }); else ui.refresh(); };
+  calBtn.onclick = function () { guard(calibrate); };
+  function toggleRec() {
+    if (recSession && recSession.kind === 'rec') { recStop(); return; }
+    if (recSession) return;
+    var t = parseT(startIn.value); if (isNaN(t)) { say('Ongeldig startpunt; gebruik m:ss.mmm of seconden.', 'err'); return; }
+    guard(function () { return recStart({ block: blkSel.value, start: t, count: +cntSel.value, noDuck: noDuck.checked, noVoice: noVoice.checked }); });
+  }
+  recBtn.onclick = toggleRec;
+
+  var ui = recUI = {
+    micSel: micSel, toggle: toggleRec,
+    meter: function () {
+      var on = micIsOpen(), lv = mic.lvl;
+      meter.classList.toggle('off', !on);
+      lv.shownPeak = Math.max(lv.peak, lv.shownPeak * 0.85);
+      meter.querySelector('.rms').style.width = (on ? dbPct(lv.rms) : 0) + '%';
+      meter.querySelector('.pk').style.left = 'calc(' + (on ? dbPct(lv.shownPeak) : 0) + '% - 1px)';
+      mdb.textContent = on ? dbTxt(lv.shownPeak) + ' dB' : '';
+      clipEl.classList.toggle('on', on && Date.now() < lv.clipUntil);
+    },
+    calMsg: function (res) {
+      calOut.className = res.ok ? 'cmsg ok' : 'cmsg warn';
+      calOut.textContent = res.ok ? 'gemeten ' + res.latencyMs.toFixed(1) + ' ms (' + res.found + '/' + res.total + ' klikken, spreiding ' + res.spreadMs.toFixed(1) + ' ms)' :
+        'niet betrouwbaar: ' + res.reason + ' — harder zetten / dichter bij de microfoon';
+    },
+    status: function () {
+      var s = recSession;
+      stat.className = 'rstat';
+      if (!s) { stat.textContent = micIsOpen() ? 'klaar' : 'microfoon uit'; return; }
+      if (s.kind === 'cal') { stat.textContent = 'kalibreren…'; return; }
+      if (s.phase === 'render') { stat.textContent = 'blok renderen…'; return; }
+      if (s.phase === 'countdown') { stat.textContent = 'aftellen ' + clamp(Math.ceil((s.t0 - ctx.currentTime) / s.beat), 1, Math.max(1, s.count)); return; }
+      if (s.phase === 'stopping') { stat.textContent = 'stoppen…'; return; }
+      var el2 = Math.max(0, ctx.currentTime - s.t0);
+      stat.className = 'rstat live';
+      stat.textContent = '● ' + fmt(el2).slice(0, -2) + ' · blok ' + fmt(s.startPt + el2).slice(0, -2);
+    },
+    progress: function () {
+      var s = recSession, job = s && s.key ? jobs[s.key] : null;
+      if (!job) { prog.style.display = 'none'; return; }
+      prog.style.display = 'flex';
+      prog.querySelector('.bar i').style.width = (job.fraction * 100) + '%';
+      prog.querySelector('.pct').textContent = Math.round(job.fraction * 100) + '%';
+      prog.querySelector('.lab').textContent = 'blok renderen · ' + job.label;
+    },
+    refresh: function () {
+      var open = micIsOpen(), s = recSession, busy = !!s, li = latInfo();
+      fillBlocks(); fillMics();
+      micBtn.textContent = open ? 'Microfoon uit' : 'Microfoon aan'; micBtn.classList.toggle('on', open); micBtn.disabled = busy;
+      micSel.disabled = busy;
+      latTxt.textContent = 'latency ' + li.ms + ' ms · ' + (li.measured ? 'gemeten ' + li.base + ' ms' : 'geschat ' + li.base + ' ms') + (li.corr ? ', correctie ' + (li.corr > 0 ? '+' : '') + li.corr + ' ms' : '');
+      latM.disabled = busy || li.corr <= -LAT_CORR_MAX; latP.disabled = busy || li.corr >= LAT_CORR_MAX;
+      calBtn.disabled = busy;
+      [blkSel, startIn, cntSel, noDuck, noVoice].forEach(function (x) { x.disabled = busy; });
+      var rec = s && s.kind === 'rec';
+      recBtn.innerHTML = rec ? '&#9632; Stop' : '&#9679; Opnemen'; recBtn.classList.toggle('on', !!rec);
+      recBtn.disabled = (busy && !rec) || (rec && s.phase === 'stopping') || !R.blocks.length;
+      helpBtn.disabled = busy;
+      ui.status(); ui.meter(); ui.progress(); renderTakes();
+    }
+  };
+  function renderTakes() {
+    list.innerHTML = '';
+    var ts = recTakes.filter(function (t) { return src(t.name); });
+    allBtn.disabled = !ts.length;
+    if (!ts.length) { list.appendChild(el('div', { class: 'dim', text: 'Nog geen opnames.' })); return; }
+    var tb = el('table', { class: 'fr takes' }, [el('tr', null, ['Opname', 'Blok', 'Stem', 'Duur', 'In blok', '', ''].map(function (h) { return el('th', { text: h }); }))]);
+    ts.forEach(function (t) {
+      var b = blockById(t.block), v = b && t.voice ? findBy(b.voice, 'id', t.voice) : null;
+      var dl = el('button', { class: 'tdl', text: 'Download', title: 'Deze opname als WAV downloaden', onclick: function () { downloadTake(t); } });
+      var rp = el('button', { class: 'trp', text: 'Vervang vorige take', title: 'Het stemfragment waarmee deze take overlapt (of de vorige take in dit blok) verwijderen', onclick: function () { replacePrevTake(t); } });
+      rp.disabled = !v || !!recSession;
+      tb.appendChild(el('tr', { 'data-take': t.name }, [
+        el('td', { text: t.name }), el('td', { text: b ? b.name : t.blockName }),
+        el('td', { text: v ? v.id + ' · ' + v.anchor + ' +' + (v.offset || 0).toFixed(3) + ' s' : 'verwijderd', class: v ? '' : 'dim' }),
+        el('td', { text: t.dur.toFixed(2) + ' s' }), el('td', { text: t.start.toFixed(3) + ' s' }),
+        el('td', { html: t.saved ? '<span class="dim">opgeslagen</span>' : '<span class="badge orange">niet opgeslagen</span>' }),
+        el('td', null, [dl, ' ', rp])
+      ]));
+    });
+    list.appendChild(tb);
+  }
+  openPanel('● Voice-over opnemen', [
+    el('div', { class: 'rrow' }, [el('span', { class: 'lbl', text: 'Microfoon' }), micSel, micBtn, meter, mdb, clipEl, el('span', { style: 'flex:1' }), helpBtn]),
+    el('div', { class: 'rrow' }, [latTxt, latM, latP, calBtn, calOut]),
+    el('div', { class: 'rrow' }, [el('span', { class: 'lbl', text: 'Blok' }), blkSel, el('span', { class: 'lbl', text: 'vanaf' }), startIn, cntSel,
+      el('label', { class: 'chk' }, [noDuck, ' ducking uit']), el('label', { class: 'chk' }, [noVoice, ' oude stem stil']), recBtn, stat]),
+    prog,
+    el('h4', { text: 'Opnames' }), list, el('div', { class: 'rrow' }, [allBtn])
+  ], function () {
+    // paneel dicht: lopende opname stoppen en bewaren, dan de microfoon sluiten
+    var s = recSession;
+    recUI = null;
+    if (s && s.kind === 'rec' && (s.phase === 'rec' || s.phase === 'stopping')) {
+      if (s.phase === 'rec') recStop();
+      s.cap.done.then(function () { setTimeout(function () { if (!recUI) micClose(); }, 0); });
+      return;
+    }
+    if (s) recAbort(s.kind === 'cal' ? 'paneel gesloten tijdens het kalibreren' : 'paneel gesloten');
+    micClose();
+  });
+  if (!blkSel.value && activeBlock) blkSel.value = activeBlock;
+  ui.refresh();
+}
+$('btnRec').onclick = function () { openRecPanel(); };
+// Spatie in het opnamepaneel = opnemen / stoppen (niet in tekstvelden)
+['keydown', 'keyup'].forEach(function (evn) {
+  document.addEventListener(evn, function (e) {
+    if (!recUI || !panelOpen() || e.key !== ' ' || $('modal').style.display === 'flex') return;
+    var t = e.target, tag = t && t.tagName;
+    if ((tag === 'INPUT' && t.type === 'text') || tag === 'TEXTAREA') return;
+    e.preventDefault(); e.stopPropagation();
+    if (evn === 'keydown' && !e.repeat) recUI.toggle();
+  }, true);
+});
+updateRecBtn();
+
 /* ---------- start ---------- */
 refreshState();
 resize();
 updatePlayBtn();
 updateHistory();
-window.__editor = { get state() { return R; }, say: say, get workerActive() { return !!wk; }, get useWorker() { return useWorker; }, get fit() { return fitInfo; }, get dirty() { return isDirty(); }, extractCommands: extractCommands };
+window.__editor = { get state() { return R; }, say: say, get workerActive() { return !!wk; }, get useWorker() { return useWorker; }, get fit() { return fitInfo; }, get dirty() { return isDirty(); }, extractCommands: extractCommands,
+  rec: { detect: detectClickLatency, CAL: CAL, calibrate: calibrate, get takes() { return recTakes; }, get last() { return recLast; }, get session() { return recSession; },
+    get mic() { return { open: micIsOpen(), kind: mic.kind, moduleFrom: mic.moduleFrom, deviceId: mic.deviceId, label: mic.label, level: { peak: mic.lvl.peak, rms: mic.lvl.rms, n: mic.lvl.n } }; }, latency: function () { return latInfo(); }, unsaved: function () { return unsavedTakes().length; } } };
 })();
 </script>
 </body>

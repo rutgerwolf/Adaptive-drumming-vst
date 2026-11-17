@@ -17,7 +17,8 @@ Alle uitleg staat in de tool zelf onder **?** (help): werkwijze, sneltoetsen, vo
 3. **+ nieuw blok** met doelduur.
 4. `Enter` = selectie als muziekfragment; `Shift+Enter` = als stemfragment (hangt aan een muziekfragment).
 5. Overgangen, ducking en per-fragment instellingen in de bloktijdlijn.
-6. **Voorbeluister** en **WAV**. Bewaar je werk met **Recept ⇅** (JSON; audio zelf blijft in je eigen bestanden).
+6. **● Opname**: spreek voice-over in terwijl het blok in je koptelefoon speelt; eerst één keer **Kalibreer** (koptelefoon tegen de microfoon). Download elke opname als WAV.
+7. **Voorbeluister** en **WAV**. Bewaar je werk met **Recept ⇅** (JSON; audio zelf blijft in je eigen bestanden).
 
 ## Vereisten
 
@@ -61,12 +62,13 @@ Overige opdrachten: `schema`, `validate`, `probe`, `selftest`, `help`.
 | 2 | Meerdere fragmenten, overgangen, stemspoor + ducking, rekenen op achtergrond met voortgang | gereed |
 | 3 | Recept opslaan/laden, AI-aansturing via chat, help, zelftest, normaliseren | gereed |
 | 4 | CLI voor Claude Code | gereed |
-| 5 | Voice-over opnemen tijdens afspelen, latency-kalibratie | in aanbouw |
+| 5 | Voice-over opnemen tijdens afspelen, latency-kalibratie | gereed (niet getest met echte microfoon) |
 
 ## Bekende beperkingen
 
 - WSOLA-kwaliteit en de presets `music`/`voice` zijn nog niet op het gehoor getoetst (HYPOTHESE: groen/oranje ratio's klinken goed).
 - Getest in Chromium (headless); Firefox/Safari niet.
+- Recorder en kalibratie zijn getest met een nep-microfoon en synthetische signalen, niet met echte microfoon/koptelefoon.
 - "Alle blokken exporteren" geeft losse downloads; de browser kan om toestemming voor meerdere downloads vragen.
 
 ## Voor ontwikkelaars
