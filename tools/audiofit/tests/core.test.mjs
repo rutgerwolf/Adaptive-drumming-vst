@@ -20,7 +20,7 @@ function fresh(sr = SR) { const a = AF.create(); a.setSampleRate(sr); return a; 
 function ok(res) { assert.equal(res.ok, true, res.error); return res.result !== undefined ? res.result : res; }
 
 test('vorm en versie', () => {
-  assert.equal(AF.version, '0.2.0');
+  assert.equal(AF.version, '0.3.0');
   assert.equal(typeof AF.CONSTANTS, 'object');
   const names = AF.describe().map((d) => d.name);
   for (const n of ['get_state', 'list_sources', 'add_marker', 'update_marker', 'delete_marker', 'create_block', 'update_block',

@@ -8,7 +8,7 @@ var AudioFit = (function () {
    * Geen DOM- of browser-API's; geen modules of afhankelijkheden.
    * ===================================================================== */
 
-  var VERSION = '0.2.0';
+  var VERSION = '0.3.0';
 
   /* ---------------------------------------------------------------------
    * CONSTANTEN (§6.5, §6.6, §7) — richtwaarden (HYPOTHESE) bij elkaar,
@@ -35,6 +35,9 @@ var AudioFit = (function () {
       red: [0.50, 2.00]
     },
     FIT_MODES: ['proportional', 'manual'],
+    // create_block zonder fitMode → 'manual' (manualDuration null = originele lengte, niets gerekt).
+    // import_recipe zonder fitMode blijft 'proportional', zodat bestaande recepten niet veranderen.
+    DEFAULT_FIT_MODE_NEW_BLOCK: 'manual',
     FIT_MAX_ITER: 50,
 
     // §6.6 overgangen
@@ -1393,14 +1396,14 @@ var AudioFit = (function () {
           return null;
         } },
 
-      { name: 'create_block', description: 'Maakt een nieuw blok met een doelduur in seconden (3 decimalen).',
+      { name: 'create_block', description: 'Maakt een nieuw blok met een doelduur in seconden (3 decimalen). Standaard fitMode "manual": fragmenten houden hun originele lengte (manualDuration null) tot je ze rekt; geef fitMode "proportional" om alles automatisch gelijk te rekken tot de doelduur.',
         schema: obj({ name: { type: 'string' }, targetDuration: { type: 'number', exclusiveMinimum: 0, description: 'seconden' },
           fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES }, duckDb: T_DUCKDB, duckMs: T_DUCKMS }, []),
         run: function (a, ctx) {
           var id = nextId('b', ctx.recipe);
           var td = a.targetDuration !== undefined ? a.targetDuration : ctx.recipe.defaults.blockDuration;
           var b = { id: id, name: a.name || ('Blok ' + (ctx.recipe.blocks.length + 1)), targetDuration: Math.round(td * 1000) / 1000,
-            fitMode: a.fitMode || 'proportional', duckDb: a.duckDb !== undefined ? a.duckDb : CONSTANTS.VOICE_DUCK_DEFAULT_DB,
+            fitMode: a.fitMode || CONSTANTS.DEFAULT_FIT_MODE_NEW_BLOCK, duckDb: a.duckDb !== undefined ? a.duckDb : CONSTANTS.VOICE_DUCK_DEFAULT_DB,
             duckMs: a.duckMs !== undefined ? a.duckMs : CONSTANTS.VOICE_DUCK_DEFAULT_MS, fragments: [], transitions: [], voice: [] };
           if (!(b.targetDuration > 0)) fail('targetDuration moet groter dan 0 zijn (na afronden op 3 decimalen)');
           ctx.recipe.blocks.push(b);
