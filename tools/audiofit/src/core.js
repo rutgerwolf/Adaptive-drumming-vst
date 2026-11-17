@@ -3,18 +3,20 @@ var AudioFit = (function () {
 
   /* =====================================================================
    * Audio Fit Tool — kern (DOM-vrij)
-   * Ontwerp: docs/ontwerpplan-audio-fit-tool.md (v0.4), contract: docs/CONTRACT.md
+   * Ontwerp: docs/ontwerpplan-audio-fit-tool.md (v0.5), contract: docs/CONTRACT.md
+   * (incl. "Aanvulling fase 2": stemspoor, ducking, renderBlockPure).
    * Geen DOM- of browser-API's; geen modules of afhankelijkheden.
    * ===================================================================== */
 
-  var VERSION = '0.1.0';
+  var VERSION = '0.2.0';
 
   /* ---------------------------------------------------------------------
    * CONSTANTEN (§6.5, §6.6, §7) — richtwaarden (HYPOTHESE) bij elkaar,
    * zodat ze na een luistertest zijn bij te stellen.
    * ------------------------------------------------------------------- */
   var CONSTANTS = {
-    RECIPE_VERSION: 1,
+    RECIPE_VERSION: 2,
+    RECIPE_VERSIONS_ACCEPTED: [1, 2],   // version 1 krijgt voice: [], duckDb −6, duckMs 150
     DEFAULT_SAMPLE_RATE: 48000,
     DEFAULT_BLOCK_DURATION: 15.0,
     DEFAULT_FADE_MS: 8,                 // §6.4 fades per fragment, cosinusvorm
@@ -43,6 +45,12 @@ var AudioFit = (function () {
     DUCK_DEFAULT_DB: -12,
     DUCK_RAMP_MS: 150,
     MAX_OVERLAP_FRACTION: 0.9,
+
+    // §6.10 stemspoor en ducking per blok
+    VOICE_DEFAULT_PRESET: 'voice',
+    VOICE_DUCK_DEFAULT_DB: -6,          // 0 = ducking uit
+    VOICE_DUCK_DEFAULT_MS: 150,
+    VOICE_DUCK_MAX_MS: 5000,
 
     // §7.1 WSOLA
     MODES: ['pitch', 'varispeed'],
@@ -189,7 +197,7 @@ var AudioFit = (function () {
       }
       if (typeOf(input) !== 'object') return { recipe: null, problems: ['recept moet een JSON-object zijn'] };
       var r = newRecipe();
-      if (has(input, 'version') && input.version !== CONSTANTS.RECIPE_VERSION) p('version ' + show(input.version) + ' wordt niet ondersteund; verwacht ' + CONSTANTS.RECIPE_VERSION);
+      if (has(input, 'version') && CONSTANTS.RECIPE_VERSIONS_ACCEPTED.indexOf(input.version) < 0) p('version ' + show(input.version) + ' wordt niet ondersteund; verwacht ' + CONSTANTS.RECIPE_VERSIONS_ACCEPTED.join(' of '));
       if (has(input, 'sampleRate')) {
         if (typeOf(input.sampleRate) !== 'integer' || input.sampleRate < 8000 || input.sampleRate > 384000) p('sampleRate moet een geheel getal tussen 8000 en 384000 zijn; kreeg ' + show(input.sampleRate));
         else r.sampleRate = input.sampleRate;
@@ -235,13 +243,14 @@ var AudioFit = (function () {
           r.sources.push(src);
         });
       }
-      var blockIds = {}, fragIds = {};
+      var blockIds = {}, fragIds = {}, voiceIds = {};
       if (has(input, 'blocks')) {
         if (!Array.isArray(input.blocks)) p('blocks moet een lijst zijn');
         else input.blocks.forEach(function (b, i) {
           var where = 'blocks[' + i + ']';
           if (typeOf(b) !== 'object') { p(where + ' moet een object zijn'); return; }
-          var blk = { id: b.id, name: b.name, targetDuration: b.targetDuration, fitMode: b.fitMode || 'proportional', fragments: [], transitions: [] };
+          var blk = { id: b.id, name: b.name, targetDuration: b.targetDuration, fitMode: b.fitMode || 'proportional',
+            duckDb: CONSTANTS.VOICE_DUCK_DEFAULT_DB, duckMs: CONSTANTS.VOICE_DUCK_DEFAULT_MS, fragments: [], transitions: [], voice: [] };
           if (typeof blk.id !== 'string' || !blk.id) { p(where + ': id ontbreekt'); return; }
           if (blockIds[blk.id]) { p('blok-id ' + q(blk.id) + ' komt twee keer voor'); return; }
           blockIds[blk.id] = true;
@@ -249,6 +258,8 @@ var AudioFit = (function () {
           if (typeof blk.name !== 'string') blk.name = blk.id;
           if (!(typeof blk.targetDuration === 'number' && blk.targetDuration > 0)) { p(where + ': targetDuration moet een getal > 0 zijn'); blk.targetDuration = r.defaults.blockDuration; }
           if (CONSTANTS.FIT_MODES.indexOf(blk.fitMode) < 0) { p(where + ': fitMode moet ' + CONSTANTS.FIT_MODES.join(' of ') + ' zijn'); blk.fitMode = 'proportional'; }
+          if (has(b, 'duckDb') && b.duckDb != null) { if (typeof b.duckDb === 'number' && isFinite(b.duckDb) && b.duckDb <= 0) blk.duckDb = b.duckDb; else p(where + ': duckDb moet een getal ≤ 0 zijn (0 = ducking uit)'); }
+          if (has(b, 'duckMs') && b.duckMs != null) { if (typeof b.duckMs === 'number' && b.duckMs >= 0 && b.duckMs <= CONSTANTS.VOICE_DUCK_MAX_MS) blk.duckMs = b.duckMs; else p(where + ': duckMs moet tussen 0 en ' + CONSTANTS.VOICE_DUCK_MAX_MS + ' ms liggen'); }
           var frs = Array.isArray(b.fragments) ? b.fragments : (has(b, 'fragments') ? (p(where + ': fragments moet een lijst zijn'), []) : []);
           frs.forEach(function (f, j) {
             var fw = where + ' fragment ' + j;
@@ -296,6 +307,47 @@ var AudioFit = (function () {
             });
             while (blk.transitions.length < need) blk.transitions.push(defaultTransition(r.defaults));
           }
+          // §6.10 stemspoor
+          var vin = has(b, 'voice') && b.voice != null ? b.voice : [];
+          if (!Array.isArray(vin)) p(where + ': voice moet een lijst zijn');
+          else vin.forEach(function (v, j) {
+            var vw = where + ' stem ' + j;
+            if (typeOf(v) !== 'object') { p(vw + ' moet een object zijn'); return; }
+            if (typeof v.id !== 'string' || !v.id) { p(vw + ': id ontbreekt'); return; }
+            if (voiceIds[v.id]) { p('stem-id ' + q(v.id) + ' komt twee keer voor'); return; }
+            voiceIds[v.id] = true;
+            vw = 'stem ' + v.id;
+            var vo = {
+              id: v.id, source: v.source, 'in': v['in'], out: v.out, anchor: v.anchor,
+              offset: has(v, 'offset') && v.offset != null ? v.offset : 0,
+              targetDuration: has(v, 'targetDuration') ? v.targetDuration : null,
+              mode: has(v, 'mode') ? v.mode : 'pitch', preset: has(v, 'preset') ? v.preset : CONSTANTS.VOICE_DEFAULT_PRESET,
+              gainDb: has(v, 'gainDb') ? v.gainDb : 0,
+              fadeInMs: has(v, 'fadeInMs') ? v.fadeInMs : r.defaults.fadeMs,
+              fadeOutMs: has(v, 'fadeOutMs') ? v.fadeOutMs : r.defaults.fadeMs,
+              acceptOverlap: has(v, 'acceptOverlap') ? v.acceptOverlap : false
+            };
+            if (typeof vo.source !== 'string' || !srcNames[vo.source]) p(vw + ' verwijst naar onbekende bron ' + q(vo.source) + '; bronnen in het recept: ' + (Object.keys(srcNames).join(', ') || '(geen)'));
+            if (typeof vo['in'] !== 'number' || typeof vo.out !== 'number') p(vw + ': in en out moeten getallen (seconden) zijn');
+            else {
+              if (vo['in'] < 0) p(vw + ': in ' + fmt(vo['in']) + ' ligt vóór het begin van de bron');
+              if (vo.out <= vo['in']) p(vw + ': out (' + fmt(vo.out) + ') moet na in (' + fmt(vo['in']) + ') liggen');
+              var vsd = srcNames[vo.source];
+              if (vsd && vsd.duration && vo.out > vsd.duration + 1e-6) p(vw + ': out ' + fmt(vo.out) + ' ligt voorbij het einde van ' + vsd.name + ' (' + fmt(vsd.duration) + ' s)');
+            }
+            var fids = blk.fragments.map(function (f) { return f.id; });
+            if (fids.indexOf(vo.anchor) < 0) p(vw + ': anker ' + q(vo.anchor) + ' is geen muziekfragment van ' + where + '; ' + (fids.length ? 'kies uit: ' + fids.join(', ') : 'het blok heeft geen muziekfragmenten'));
+            if (typeof vo.offset !== 'number' || !isFinite(vo.offset)) p(vw + ': offset moet een getal (seconden) zijn');
+            if (!(vo.targetDuration === null || (typeof vo.targetDuration === 'number' && vo.targetDuration > 0))) p(vw + ': targetDuration moet null of een getal > 0 zijn');
+            if (CONSTANTS.MODES.indexOf(vo.mode) < 0) p(vw + ': mode moet ' + CONSTANTS.MODES.join(' of ') + ' zijn');
+            if (CONSTANTS.PRESETS.indexOf(vo.preset) < 0) p(vw + ': preset moet ' + CONSTANTS.PRESETS.join(' of ') + ' zijn');
+            ['fadeInMs', 'fadeOutMs'].forEach(function (k) {
+              if (!(typeof vo[k] === 'number' && vo[k] >= 0 && vo[k] <= CONSTANTS.FADE_MAX_MS)) p(vw + ': ' + k + ' moet tussen 0 en ' + CONSTANTS.FADE_MAX_MS + ' ms liggen');
+            });
+            if (typeof vo.gainDb !== 'number') p(vw + ': gainDb moet een getal zijn');
+            if (typeof vo.acceptOverlap !== 'boolean') p(vw + ': acceptOverlap moet true of false zijn');
+            blk.voice.push(vo);
+          });
           r.blocks.push(blk);
         });
       }
@@ -603,12 +655,17 @@ var AudioFit = (function () {
   /* =====================================================================
    * Fit-berekening (§6.5, regels §6.6) — puur, op het recept
    * ===================================================================== */
-  function computeFit(block) {
+  function computeFit(block) { return computeFitFull(block).report; }
+
+  // Retourneert { report (= fit_report-regel), voiceErrors: [string], unaccepted: [overlap] }.
+  function computeFitFull(block) {
     var T = block.targetDuration, fr = block.fragments, n = fr.length, tr = block.transitions || [];
     var label = q(block.name) + ' (' + block.id + ')';
     var res = { block: block.id, name: block.name, fitMode: block.fitMode, targetDuration: T, ok: true, error: null,
-      ratio: null, fragments: [], transitions: [], contentDuration: 0, deviation: 0, exportable: false, warnings: [] };
-    if (!n) { res.ok = false; res.error = 'blok ' + label + ' bevat nog geen fragmenten; voeg er een toe met add_fragment'; return res; }
+      ratio: null, fragments: [], transitions: [], voice: [], duck: [], overlaps: [],
+      contentDuration: 0, deviation: 0, exportable: false, warnings: [] };
+    var full = { report: res, voiceErrors: [], unaccepted: [] };
+    if (!n) { res.ok = false; res.error = 'blok ' + label + ' bevat nog geen fragmenten; voeg er een toe met add_fragment'; return full; }
     var src = fr.map(function (f) { return f.out - f['in']; });
     var nominal = [], gaps = [], eff = [], i, j;
     for (i = 0; i < n - 1; i++) {
@@ -633,7 +690,7 @@ var AudioFit = (function () {
           res.ok = false;
           res.error = 'fit onmogelijk voor blok ' + label + ': doelduur ' + fmt(T) + ' s + overlap ' + fmt(O) + ' s − stilte ' + fmt(G) +
             ' s − vergrendeld ' + fmt(Llocked) + ' s = ' + fmt(denom) + ' s (moet > 0 zijn); ontgrendel fragmenten, verkort stiltes of verleng het blok';
-          return res;
+          return full;
         }
         ratio = Lfree / denom;
         for (i = 0; i < n; i++) d[i] = fr[i].locked ? src[i] : src[i] / ratio;
@@ -665,12 +722,18 @@ var AudioFit = (function () {
     res.ratio = ratio;
     res.contentDuration = content;
     res.deviation = content - T;
+    // Uitvoertijden in het blok (seconden): start_0 = 0, start_{i+1} = start_i + doeldur_i − overlap_i + gap_i.
+    var mStart = [], mEnd = [], pos = 0;
+    for (i = 0; i < n; i++) {
+      mStart.push(pos); mEnd.push(pos + d[i]);
+      if (i < n - 1) pos = pos + d[i] - eff[i] + gaps[i];
+    }
     var blocked = false;
     for (i = 0; i < n; i++) {
       var ri = src[i] / d[i];
       var st = ratioStatus(ri);
       var fe = { id: fr[i].id, source: fr[i].source, 'in': fr[i]['in'], out: fr[i].out, mode: fr[i].mode, preset: fr[i].preset, locked: fr[i].locked,
-        sourceDuration: src[i], targetDuration: d[i], ratio: ri, status: st };
+        sourceDuration: src[i], targetDuration: d[i], ratio: ri, status: st, start: mStart[i], end: mEnd[i] };
       if (fr[i].mode === 'varispeed') fe.semitones = Math.round(1200 * Math.log(ri) / Math.LN2) / 100;
       if (st === 'blocked' && fr[i].mode === 'pitch') {
         blocked = true;
@@ -681,8 +744,8 @@ var AudioFit = (function () {
     }
     for (i = 0; i < n - 1; i++) {
       var tt = tr[i] || { type: 'cut', ms: 0 };
-      var te = { index: i, type: tt.type, ms: tt.ms || 0, effectiveMs: isOverlapType(tt.type) ? eff[i] * 1000 : (tt.ms || 0),
-        overlap: eff[i], gap: gaps[i] };
+      var te = { index: i, type: tt.type, ms: tt.ms || 0, start: Math.min(mEnd[i], mStart[i + 1]), end: Math.max(mEnd[i], mStart[i + 1]),
+        effectiveMs: isOverlapType(tt.type) ? eff[i] * 1000 : (tt.ms || 0), overlap: eff[i], gap: gaps[i] };
       if (tt.curve) te.curve = tt.curve;
       if (tt.type === 'duck') te.duckDb = tt.duckDb;
       if (eff[i] < nominal[i] - 1e-9) {
@@ -700,8 +763,367 @@ var AudioFit = (function () {
     } else if (content < T - tol) {
       res.warnings.push('blok ' + label + ' is ' + fmt(T - content) + ' s te kort; aan het eind komt stilte');
     }
-    res.exportable = res.ok && !blocked && content <= T + tol;
-    return res;
+    computeVoice(block, res, full, mStart, tol);
+    res.exportable = res.ok && !blocked && content <= T + tol && !full.voiceErrors.length;
+    return full;
+  }
+
+  // §6.10 stemspoor: positie (anker + offset), ratio, buiten-blok, overlap, ducking-zones.
+  function computeVoice(block, res, full, mStart, tol) {
+    var T = block.targetDuration, vs = block.voice || [], label = q(block.name) + ' (' + block.id + ')';
+    var ids = block.fragments.map(function (f) { return f.id; });
+    var B = CONSTANTS.RATIO_BANDS, placed = [];
+    vs.forEach(function (v, idx) {
+      var ai = ids.indexOf(v.anchor);
+      var sd = v.out - v['in'];
+      var td = v.targetDuration == null ? sd : v.targetDuration;
+      var ratio = sd / td, st = ratioStatus(ratio);
+      var start = ai >= 0 ? mStart[ai] + (v.offset || 0) : null;
+      var e = { id: v.id, anchor: v.anchor, start: start, end: start == null ? null : start + td,
+        sourceDuration: sd, targetDuration: td, ratio: ratio, status: st };
+      if (v.mode === 'varispeed') e.semitones = Math.round(1200 * Math.log(ratio) / Math.LN2) / 100;
+      res.voice.push(e);
+      function err(m) { full.voiceErrors.push(m); res.warnings.push(m); }
+      if (ai < 0) { err('stem ' + v.id + ': anker ' + q(v.anchor) + ' is geen muziekfragment van blok ' + label + '; kies uit: ' + (ids.join(', ') || '(geen)')); return; }
+      if (st === 'blocked' && v.mode === 'pitch') {
+        err('stem ' + v.id + ': ratio ' + ratio.toFixed(3) + ' valt buiten ' + B.red[0].toFixed(2) + '–' + B.red[1].toFixed(2) +
+          ' (geblokkeerd); kies een targetDuration dichter bij de bronduur (' + fmt(sd) + ' s) of null');
+      } else if (v.targetDuration != null && st !== 'green' && st !== 'orange') {
+        res.warnings.push('stem ' + v.id + ': ratio ' + ratio.toFixed(3) + ' — stem duidelijk hoorbaar ' + (ratio > 1 ? 'versneld' : 'vertraagd'));
+      }
+      if (e.start < -tol) {
+        err('stem ' + v.id + ' begint ' + fmt(-e.start) + ' s vóór het begin van blok ' + label + ' (anker ' + v.anchor + ' start op ' + fmt(mStart[ai]) +
+          ' s, offset ' + fmt(v.offset) + ' s); offset moet minstens ' + fmt(-mStart[ai]) + ' zijn');
+      }
+      if (e.end > T + tol) {
+        err('stem ' + v.id + ' is ' + fmt(e.end - T) + ' s te lang voor blok ' + label + ': eindigt op ' + fmt(e.end) + ' s, het blok duurt ' + fmt(T) +
+          ' s; verklein offset, verkort de stem of geef een kortere targetDuration');
+      }
+      placed.push({ v: v, idx: idx, start: e.start, end: e.end });
+    });
+    // Overlap tussen stemfragmenten (gesorteerd op start; bij gelijke start telt de volgorde in de lijst).
+    placed.sort(function (a, b) { return a.start - b.start || a.idx - b.idx; });
+    for (var i = 0; i < placed.length; i++) {
+      for (var j = i + 1; j < placed.length; j++) {
+        var A = placed[i], Bv = placed[j];
+        if (Bv.start >= A.end - 1e-9) continue;
+        var dur = Math.min(A.end, Bv.end) - Bv.start;
+        var ov = { a: A.v.id, b: Bv.v.id, duration: dur, accepted: !!Bv.v.acceptOverlap };
+        res.overlaps.push(ov);
+        if (ov.accepted) res.warnings.push('stemfragmenten ' + ov.a + ' en ' + ov.b + ' overlappen ' + fmt(dur) + ' s (geaccepteerd; beide worden opgeteld)');
+        else {
+          full.unaccepted.push(ov);
+          res.warnings.push('stemfragmenten ' + ov.a + ' en ' + ov.b + ' overlappen ' + fmt(dur) + ' s; render/export geblokkeerd tot de overlap ' +
+            'geaccepteerd is (update_voice {"voice":"' + ov.b + '","acceptOverlap":true}) of een van beide verschoven is');
+        }
+      }
+    }
+    res.duck = duckZones(placed, block.duckDb, block.duckMs / 1000, T);
+  }
+
+  // Samengevoegde ducking-zones incl. hellingen, begrensd op [0, T]. Werkt in seconden én in samples.
+  // Retourneert [{ start, end }] en (intern) per zone de stemgrenzen voor de hellingen.
+  function duckGroups(spans, ramp, T) {
+    var list = spans.slice().sort(function (a, b) { return a.start - b.start; });
+    var groups = [];
+    list.forEach(function (sp) {
+      var g = groups[groups.length - 1];
+      if (g && sp.start - ramp <= g.vEnd + ramp) { if (sp.end > g.vEnd) g.vEnd = sp.end; }
+      else groups.push({ vStart: sp.start, vEnd: sp.end });
+    });
+    groups.forEach(function (g) {
+      g.vStart = Math.max(0, g.vStart); g.vEnd = Math.min(T, g.vEnd);
+      g.start = Math.max(0, g.vStart - ramp); g.end = Math.min(T, g.vEnd + ramp);
+    });
+    return groups;
+  }
+  function duckZones(placed, duckDb, rampSec, T) {
+    if (!(duckDb < 0) || !placed.length) return [];
+    return duckGroups(placed, rampSec, T).map(function (g) { return { start: g.start, end: g.end }; });
+  }
+
+  /* =====================================================================
+   * Opzoeken (puur, op een recept)
+   * ===================================================================== */
+  function findBlock(recipe, ref) {
+    for (var i = 0; i < recipe.blocks.length; i++) if (recipe.blocks[i].id === ref) return recipe.blocks[i];
+    var byName = recipe.blocks.filter(function (b) { return b.name === ref; });
+    if (byName.length === 1) return byName[0];
+    var list = recipe.blocks.map(function (b) { return b.id + ' (' + b.name + ')'; });
+    fail('blok ' + q(ref) + ' bestaat niet; ' + (list.length ? 'bestaande blokken: ' + list.join(', ') : 'er zijn nog geen blokken; maak er een met create_block'));
+  }
+
+  /* =====================================================================
+   * Renderer — blok samenstellen (§7.3) + stemspoor en ducking (§6.10).
+   * Puur: werkt op (recept, audio, blok, {cache, onProgress}) zonder interne
+   * state. Gebruikt door render_block (hoofdthread) én renderBlockPure (Worker),
+   * zodat beide sample-identiek zijn.
+   * ===================================================================== */
+  var Renderer = (function () {
+    function fadeInGain(g, len) { for (var k = 0; k < len; k++) g[k] *= 0.5 - 0.5 * Math.cos(Math.PI * k / len); }
+    function fadeOutGain(g, n, len) { for (var k = 0; k < len; k++) g[n - len + k] *= 0.5 + 0.5 * Math.cos(Math.PI * (k + 1) / len); }
+    function curveIn(g, len, curve) {
+      for (var k = 0; k < len; k++) { var x = k / len; g[k] *= curve === 'linear' ? x : Math.sin(x * Math.PI / 2); }
+    }
+    function curveOut(g, n, len, curve) {
+      for (var k = 0; k < len; k++) { var x = k / len; g[n - len + k] *= curve === 'linear' ? 1 - x : Math.cos(x * Math.PI / 2); }
+    }
+    function duckOut(g, n, len, level, ramp) {
+      for (var k = 0; k < len; k++) {
+        var v;
+        if (k < ramp) v = 1 - (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * k / ramp));
+        else if (k < len - ramp) v = level;
+        else { var kk = k - (len - ramp); v = level * (0.5 + 0.5 * Math.cos(Math.PI * (kk + 1) / ramp)); }
+        g[n - len + k] *= v;
+      }
+    }
+
+    // Stretch/resample van een uitsnede, met cache (sleutel §7.3 stap 4 + preset).
+    // kind: 'f' (muziek) of 'v' (stem). progress(fractie 0..1) tijdens WSOLA.
+    function rawItem(env, kind, item, outLength, progress) {
+      var a = env.audio[item.source], sr = env.sampleRate, cache = env.cache;
+      var who = (kind === 'v' ? 'stem ' : 'fragment ') + item.id;
+      var key = [kind, item.id, item.source, a.version == null ? '' : a.version, item['in'], item.out, outLength, item.mode, item.preset].join('|');
+      if (cache && cache.has(key)) {
+        var hit = cache.get(key);
+        if (typeof cache['delete'] === 'function') { cache['delete'](key); cache.set(key, hit); }
+        if (hit.warning) env.warnings.push(who + ': ' + hit.warning);
+        return hit.channels;
+      }
+      var len = a.channels[0].length;
+      var s0 = Math.max(0, Math.min(len, Math.round(item['in'] * sr))), s1 = Math.max(s0, Math.min(len, Math.round(item.out * sr)));
+      var slice = a.channels.map(function (ch) { return ch.subarray(s0, s1); });
+      var r;
+      if (item.mode === 'varispeed') r = { channels: Resampler.resample(slice, outLength), method: 'varispeed' };
+      else r = Stretch.run(slice, outLength, { preset: item.preset, sampleRate: sr, onProgress: progress });
+      if (r.warning) env.warnings.push(who + ': ' + r.warning);
+      if (cache) {
+        cache.set(key, { channels: r.channels, warning: r.warning || null });
+        if (typeof cache.size === 'number' && typeof cache.keys === 'function' && typeof cache['delete'] === 'function') {
+          while (cache.size > CONSTANTS.RENDER_CACHE_MAX) cache['delete'](cache.keys().next().value);
+        }
+      }
+      return r.channels;
+    }
+
+    function sourceLen(a, item, sr) {
+      var len = a.channels[0].length;
+      var s0 = Math.max(0, Math.min(len, Math.round(item['in'] * sr))), s1 = Math.max(s0, Math.min(len, Math.round(item.out * sr)));
+      return s1 - s0;
+    }
+
+    // Retourneert { sampleRate, channels, stats: {duration, samples, peakDb, clipped}, peak, warnings }.
+    function render(recipe, audio, block, opts) {
+      opts = opts || {};
+      audio = audio || {};
+      var full = computeFitFull(block), fit = full.report;
+      var bl = q(block.name) + ' (' + block.id + ')';
+      if (!fit.ok) fail(fit.error);
+      var warnings = fit.warnings.slice();
+      var T = block.targetDuration, sr = recipe.sampleRate;
+      if (!fit.exportable) {
+        if (fit.contentDuration > T + 1e-6) fail('blok ' + bl + ' is ' + fmt(fit.contentDuration - T) + ' s te lang (' + fmt(fit.contentDuration) + ' s i.p.v. ' + fmt(T) + ' s); verkort de handmatige duren of zet fitMode op proportional');
+        if (full.voiceErrors.length) fail('blok ' + bl + ' kan niet gerenderd worden: ' + full.voiceErrors.join('; '));
+        fail('blok ' + bl + ' kan niet gerenderd worden: ' + fit.warnings.join('; '));
+      }
+      if (full.unaccepted.length) {
+        fail('blok ' + bl + ' kan niet gerenderd worden: ' + full.unaccepted.map(function (o) {
+          return 'stemfragmenten ' + o.a + ' en ' + o.b + ' overlappen ' + fmt(o.duration) + ' s';
+        }).join('; ') + '. Accepteer de overlap met acceptOverlap: true op het later startende fragment (update_voice {"voice":"' +
+          full.unaccepted[0].b + '","acceptOverlap":true}) of verschuif een van beide');
+      }
+      var fr = block.fragments, n = fr.length, tr = block.transitions, vs = block.voice || [], i, c, k;
+      var missing = fr.concat(vs).filter(function (f) { return !audio[f.source]; }).map(function (f) { return f.source; });
+      if (missing.length) {
+        var uniq = missing.filter(function (x, ix) { return missing.indexOf(x) === ix; });
+        fail('blok ' + q(block.name) + ' is niet renderbaar: ontbrekende bron(nen) ' + uniq.join(', ') + '; laad die bestanden eerst');
+      }
+      fr.concat(vs).forEach(function (f) {
+        var a = audio[f.source];
+        if (a.sampleRate != null && a.sampleRate !== sr) fail('bron ' + q(f.source) + ' staat op ' + a.sampleRate + ' Hz; verwacht de werkfrequentie ' + sr + ' Hz (eerst resamplen)');
+      });
+      // 1. total
+      var total = Math.round(T * sr);
+      // 2. outLength_i, overlap en gap in samples
+      var outLen = fit.fragments.map(function (fe) { return Math.round(fe.targetDuration * sr); });
+      var ov = fit.transitions.map(function (te) { return Math.round(te.overlap * sr); });
+      var gp = fit.transitions.map(function (te) { return Math.round(te.gap * sr); });
+      function contentLen() {
+        var s = 0; for (var a = 0; a < n; a++) s += outLen[a];
+        for (var b = 0; b < n - 1; b++) s += gp[b] - ov[b];
+        return s;
+      }
+      // 3. afrondingsverschil op het laatste vrije fragment
+      var lastFree = -1;
+      for (i = n - 1; i >= 0; i--) if (!fr[i].locked) { lastFree = i; break; }
+      var exact = block.fitMode === 'proportional' && lastFree >= 0;
+      var diff = total - contentLen();
+      if (exact) outLen[lastFree] += diff;
+      else if (diff < 0) {
+        if (-diff > n + 1) fail('blok ' + q(block.name) + ' is ' + (-diff) + ' samples te lang');
+        outLen[lastFree >= 0 ? lastFree : n - 1] += diff;
+      }
+      for (i = 0; i < n; i++) if (outLen[i] < 1) fail('fragment ' + fr[i].id + ' krijgt een doelduur van ' + outLen[i] + ' samples; blok ' + q(block.name) + ' is te krap');
+      for (i = 0; i < n - 1; i++) ov[i] = Math.min(ov[i], outLen[i], outLen[i + 1]);
+      if (exact) {
+        var d2 = total - contentLen();
+        if (d2 !== 0) outLen[lastFree] += d2;
+      }
+      // 6. startposities (vooraf, zodat de stem aan zijn anker kan hangen)
+      var starts = [], sPos = 0;
+      for (i = 0; i < n; i++) { starts.push(sPos); if (i < n - 1) sPos = sPos + outLen[i] - ov[i] + gp[i]; }
+      // Stem: lengte en startsample = uitvoerstart anker + offset (begrensd op het blok;
+      // de fit heeft al gecontroleerd dat de stem binnen het blok valt, verschil ≤ afronding).
+      var fids = fr.map(function (f) { return f.id; });
+      var vPlan = vs.map(function (v) {
+        var a = audio[v.source];
+        var L = v.targetDuration == null ? sourceLen(a, v, sr) : Math.round(v.targetDuration * sr);
+        if (L < 1) fail('stem ' + v.id + ' krijgt een duur van ' + L + ' samples; kies een langere uitsnede of targetDuration');
+        if (L > total) fail('stem ' + v.id + ' is ' + fmt((L - total) / sr) + ' s te lang voor blok ' + bl);
+        var st = starts[fids.indexOf(v.anchor)] + Math.round((v.offset || 0) * sr);
+        st = Math.max(0, Math.min(st, total - L));
+        return { v: v, start: st, len: L };
+      });
+
+      // Voortgang: gewicht per taak = aantal uitvoersamples; mixen ≈ 5%.
+      var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+      var weights = outLen.concat(vPlan.map(function (p) { return p.len; }));
+      var W = 0; weights.forEach(function (w) { W += Math.max(1, w); });
+      var mixW = Math.max(1, Math.round(W * 0.05)); W += mixW;
+      var doneW = 0, lastF = 0;
+      function report(frac, label) {
+        if (!onProgress) return;
+        var f = frac > 1 ? 1 : (frac < lastF ? lastF : frac);
+        lastF = f;
+        onProgress(f, label);
+      }
+      function job(w, label) {
+        var base = doneW; w = Math.max(1, w);
+        report(base / W, label);
+        return {
+          progress: function (x) { report((base + w * Math.max(0, Math.min(1, x))) / W, label); },
+          done: function () { doneW = base + w; report(doneW / W, label); }
+        };
+      }
+      var env = { audio: audio, sampleRate: sr, cache: opts.cache || null, warnings: warnings };
+
+      var C = 1;
+      fr.concat(vs).forEach(function (f) { C = Math.max(C, audio[f.source].channels.length); });
+      var out = [];
+      for (c = 0; c < C; c++) out.push(new Float32Array(total));
+      var micro = Math.round(CONSTANTS.MICROFADE_MS / 1000 * sr);
+      var duckRamp = Math.round(CONSTANTS.DUCK_RAMP_MS / 1000 * sr);
+      var endPos = 0;
+      for (i = 0; i < n; i++) {
+        var f = fr[i], L = outLen[i], start = starts[i];
+        // 4. stretchen of resamplen (cache)
+        var jb = job(L, 'muziek ' + (i + 1) + '/' + n + ' rekken');
+        var raw = rawItem(env, 'f', f, L, jb.progress);
+        jb.done();
+        // 5. gain en omhulling
+        var g = new Float32Array(L);
+        g.fill(dbToLin(f.gainDb || 0));
+        var left = null, right = null;
+        if (i === 0) left = { kind: 'fade', len: Math.round((f.fadeInMs || 0) / 1000 * sr), own: true };
+        else {
+          var tl = tr[i - 1];
+          if (tl.type === 'crossfade' || tl.type === 'fade_in_b') left = { kind: 'curve', len: ov[i - 1], curve: tl.curve || 'equal_power' };
+          else left = { kind: 'fade', len: micro };
+        }
+        if (i === n - 1) right = { kind: 'fade', len: Math.round((f.fadeOutMs || 0) / 1000 * sr), own: true };
+        else {
+          var trr = tr[i];
+          if (trr.type === 'crossfade' || trr.type === 'fade_out_a') right = { kind: 'curve', len: ov[i], curve: trr.curve || 'equal_power' };
+          else if (trr.type === 'duck') right = { kind: 'duck', len: ov[i], level: dbToLin(typeof trr.duckDb === 'number' ? trr.duckDb : CONSTANTS.DUCK_DEFAULT_DB), ramp: Math.min(duckRamp, Math.floor(ov[i] / 2)) };
+          else right = { kind: 'fade', len: micro };
+        }
+        // Fades/overgangen samen langer dan het fragment → fades evenredig inkorten
+        // (overgangscurves liggen vast: die bepalen de uitlijning).
+        if (left.len + right.len > L) {
+          var fixed = (left.kind !== 'fade' ? left.len : 0) + (right.kind !== 'fade' ? right.len : 0);
+          var flex = (left.kind === 'fade' ? left.len : 0) + (right.kind === 'fade' ? right.len : 0);
+          var room = Math.max(0, L - fixed), sc = flex > 0 ? Math.min(1, room / flex) : 1;
+          if (left.kind === 'fade') left.len = Math.floor(left.len * sc);
+          if (right.kind === 'fade') right.len = Math.floor(right.len * sc);
+          if ((left.own || right.own) && sc < 1) warnings.push('fragment ' + f.id + ': fades samen langer dan het fragment; evenredig ingekort');
+        }
+        if (left.len > 0) { if (left.kind === 'curve') curveIn(g, left.len, left.curve); else fadeInGain(g, left.len); }
+        if (right.len > 0) {
+          if (right.kind === 'curve') curveOut(g, L, right.len, right.curve);
+          else if (right.kind === 'duck') { if (right.ramp > 0) duckOut(g, L, right.len, right.level, right.ramp); else curveOut(g, L, right.len, 'linear'); }
+          else fadeOutGain(g, L, right.len);
+        }
+        var RC = raw.length;
+        for (c = 0; c < C; c++) {
+          var rc = raw[c % RC], dst = out[c];
+          var lim = Math.min(L, total - start);
+          for (k = 0; k < lim; k++) dst[start + k] += rc[k] * g[k];
+        }
+        endPos = start + L;
+      }
+      // 7. invariant (muziekspoor)
+      if (out[0].length !== total || (exact && endPos !== total) || endPos > total) {
+        throw new Error('Interne fout: lengte-invariant geschonden in blok ' + block.id + ' (uitvoer ' + endPos + ' samples, verwacht ' + total + ')');
+      }
+
+      // §6.10 stemmen stretchen (alleen met targetDuration; anders kopie op oorspronkelijke snelheid)
+      var vRaw = vPlan.map(function (p, j) {
+        var jv = job(p.len, 'stem ' + (j + 1) + '/' + vPlan.length + ' rekken');
+        var r = rawItem(env, 'v', p.v, p.len, jv.progress);
+        jv.done();
+        return r;
+      });
+      report(doneW / W, 'mixen');
+      // Ducking-omhullende op de muziek (cosinus, zones samengevoegd, begrensd op het blok)
+      if (vPlan.length && block.duckDb < 0) {
+        var level = dbToLin(block.duckDb), rampS = Math.round((block.duckMs || 0) / 1000 * sr);
+        var groups = duckGroups(vPlan.map(function (p) { return { start: p.start, end: p.start + p.len }; }), rampS, total);
+        var envG = new Float32Array(total); envG.fill(1);
+        groups.forEach(function (gr) {
+          var a0 = gr.start, a1 = gr.vStart, b0 = gr.vEnd, b1 = gr.end, kk;
+          for (kk = a0; kk < a1; kk++) envG[kk] = 1 - (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * (kk - a0) / (a1 - a0)));
+          for (kk = a1; kk < b0; kk++) envG[kk] = level;
+          for (kk = b0; kk < b1; kk++) envG[kk] = level + (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * (kk - b0) / (b1 - b0)));
+        });
+        for (c = 0; c < C; c++) { var oc0 = out[c]; for (k = 0; k < total; k++) oc0[k] *= envG[k]; }
+      }
+      // Stemmen optellen: gain, eigen fades (cosinus), op hun startsample.
+      vPlan.forEach(function (p, j) {
+        var v = p.v, L = p.len, raw = vRaw[j];
+        var g = new Float32Array(L);
+        g.fill(dbToLin(v.gainDb || 0));
+        var fi = Math.round((v.fadeInMs || 0) / 1000 * sr), fo = Math.round((v.fadeOutMs || 0) / 1000 * sr);
+        if (fi + fo > L) {
+          var scv = L / (fi + fo);
+          fi = Math.floor(fi * scv); fo = Math.floor(fo * scv);
+          warnings.push('stem ' + v.id + ': fades samen langer dan het stemfragment; evenredig ingekort');
+        }
+        if (fi > 0) fadeInGain(g, fi);
+        if (fo > 0) fadeOutGain(g, L, fo);
+        var RC = raw.length;
+        for (c = 0; c < C; c++) {
+          var rc = raw[c % RC], dst = out[c], st = p.start;
+          for (k = 0; k < L; k++) dst[st + k] += rc[k] * g[k];
+        }
+      });
+      if (out[0].length !== total) throw new Error('Interne fout: lengte-invariant geschonden in blok ' + block.id + ' na het stemspoor');
+      var peak = 0;
+      for (c = 0; c < C; c++) { var oc = out[c]; for (k = 0; k < total; k++) { var av = oc[k] < 0 ? -oc[k] : oc[k]; if (av > peak) peak = av; } }
+      var clipped = peak > 1;
+      if (clipped) warnings.push('blok ' + q(block.name) + ': piek ' + linToDb(peak) + ' dBFS boven 0 dBFS; bij export begrensd op ±1,0 (overweeg gainDb lager of normalize)');
+      report(1, 'klaar');
+      return { sampleRate: sr, channels: out, stats: { duration: total / sr, samples: total, peakDb: linToDb(peak), clipped: clipped }, peak: peak, warnings: warnings };
+    }
+    return { render: render };
+  })();
+
+  // Pure render-API voor de Worker (contract fase 2). Geen interne state.
+  function renderBlockPure(recipe, audio, blockId, opts) {
+    var nr = Validator.normalizeRecipe(recipe);
+    if (nr.problems.length) fail('recept bevat ' + nr.problems.length + ' probleem/problemen: ' + nr.problems.join('; '));
+    var block = findBlock(nr.recipe, blockId);
+    var r = Renderer.render(nr.recipe, audio || {}, block, opts || {});
+    return { sampleRate: r.sampleRate, channels: r.channels, stats: r.stats, warnings: r.warnings };
   }
 
   /* =====================================================================
@@ -840,13 +1262,7 @@ var AudioFit = (function () {
     }
 
     /* --------------------------- Opzoekhulpen -------------------------- */
-    function getBlock(recipe, ref) {
-      for (var i = 0; i < recipe.blocks.length; i++) if (recipe.blocks[i].id === ref) return recipe.blocks[i];
-      var byName = recipe.blocks.filter(function (b) { return b.name === ref; });
-      if (byName.length === 1) return byName[0];
-      var list = recipe.blocks.map(function (b) { return b.id + ' (' + b.name + ')'; });
-      fail('blok ' + q(ref) + ' bestaat niet; ' + (list.length ? 'bestaande blokken: ' + list.join(', ') : 'er zijn nog geen blokken; maak er een met create_block'));
-    }
+    var getBlock = findBlock;
     function getFragment(recipe, id) {
       for (var i = 0; i < recipe.blocks.length; i++) {
         var b = recipe.blocks[i];
@@ -876,156 +1292,14 @@ var AudioFit = (function () {
     }
 
     /* ----------------------------- Renderer ---------------------------- */
+    // Zelfde pure Renderer als renderBlockPure; hier met de cache en audio van de instantie.
     var renderCache = new Map();
     var rendered = {};
-
-    function rawFragment(recipe, f, outLength, warnings) {
-      var a = Store.audio[f.source];
-      if (!a) fail('bron ' + q(f.source) + ' van fragment ' + f.id + ' is niet geladen; laad het bestand eerst (attachAudio)');
-      var sr = recipe.sampleRate;
-      var key = [f.id, f.source, a.version, f['in'], f.out, outLength, f.mode, f.preset].join('|');
-      if (renderCache.has(key)) {
-        var hit = renderCache.get(key);
-        renderCache.delete(key); renderCache.set(key, hit);
-        if (hit.warning) warnings.push('fragment ' + f.id + ': ' + hit.warning);
-        return hit.channels;
-      }
-      var len = a.channels[0].length;
-      var s0 = Math.max(0, Math.min(len, Math.round(f['in'] * sr))), s1 = Math.max(s0, Math.min(len, Math.round(f.out * sr)));
-      var slice = a.channels.map(function (ch) { return ch.subarray(s0, s1); });
-      var r;
-      if (f.mode === 'varispeed') r = { channels: Resampler.resample(slice, outLength), method: 'varispeed' };
-      else r = Stretch.run(slice, outLength, { preset: f.preset, sampleRate: sr });
-      if (r.warning) warnings.push('fragment ' + f.id + ': ' + r.warning);
-      renderCache.set(key, { channels: r.channels, warning: r.warning || null });
-      while (renderCache.size > CONSTANTS.RENDER_CACHE_MAX) renderCache.delete(renderCache.keys().next().value);
-      return r.channels;
-    }
-
-    function fadeInGain(g, len) { for (var k = 0; k < len; k++) g[k] *= 0.5 - 0.5 * Math.cos(Math.PI * k / len); }
-    function fadeOutGain(g, n, len) { for (var k = 0; k < len; k++) g[n - len + k] *= 0.5 + 0.5 * Math.cos(Math.PI * (k + 1) / len); }
-    function curveIn(g, len, curve) {
-      for (var k = 0; k < len; k++) { var x = k / len; g[k] *= curve === 'linear' ? x : Math.sin(x * Math.PI / 2); }
-    }
-    function curveOut(g, n, len, curve) {
-      for (var k = 0; k < len; k++) { var x = k / len; g[n - len + k] *= curve === 'linear' ? 1 - x : Math.cos(x * Math.PI / 2); }
-    }
-    function duckOut(g, n, len, level, ramp) {
-      for (var k = 0; k < len; k++) {
-        var v;
-        if (k < ramp) v = 1 - (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * k / ramp));
-        else if (k < len - ramp) v = level;
-        else { var kk = k - (len - ramp); v = level * (0.5 + 0.5 * Math.cos(Math.PI * (kk + 1) / ramp)); }
-        g[n - len + k] *= v;
-      }
-    }
-
-    function renderBlock(recipe, block) {
-      var fit = computeFit(block);
-      if (!fit.ok) fail(fit.error);
-      var warnings = fit.warnings.slice();
-      var T = block.targetDuration, sr = recipe.sampleRate;
-      if (!fit.exportable) {
-        if (fit.contentDuration > T + 1e-6) fail('blok ' + q(block.name) + ' (' + block.id + ') is ' + fmt(fit.contentDuration - T) + ' s te lang (' + fmt(fit.contentDuration) + ' s i.p.v. ' + fmt(T) + ' s); verkort de handmatige duren of zet fitMode op proportional');
-        fail('blok ' + q(block.name) + ' (' + block.id + ') kan niet gerenderd worden: ' + fit.warnings.join('; '));
-      }
-      var fr = block.fragments, n = fr.length, tr = block.transitions, i, c, k;
-      var missing = fr.filter(function (f) { return !Store.audio[f.source]; }).map(function (f) { return f.source; });
-      if (missing.length) {
-        var uniq = missing.filter(function (x, ix) { return missing.indexOf(x) === ix; });
-        fail('blok ' + q(block.name) + ' is niet renderbaar: ontbrekende bron(nen) ' + uniq.join(', ') + '; laad die bestanden eerst');
-      }
-      // 1. total
-      var total = Math.round(T * sr);
-      // 2. outLength_i, overlap en gap in samples
-      var outLen = fit.fragments.map(function (fe) { return Math.round(fe.targetDuration * sr); });
-      var ov = fit.transitions.map(function (te) { return Math.round(te.overlap * sr); });
-      var gp = fit.transitions.map(function (te) { return Math.round(te.gap * sr); });
-      function contentLen() {
-        var s = 0; for (var a = 0; a < n; a++) s += outLen[a];
-        for (var b = 0; b < n - 1; b++) s += gp[b] - ov[b];
-        return s;
-      }
-      // 3. afrondingsverschil op het laatste vrije fragment
-      var lastFree = -1;
-      for (i = n - 1; i >= 0; i--) if (!fr[i].locked) { lastFree = i; break; }
-      var exact = block.fitMode === 'proportional' && lastFree >= 0;
-      var diff = total - contentLen();
-      if (exact) outLen[lastFree] += diff;
-      else if (diff < 0) {
-        if (-diff > n + 1) fail('blok ' + q(block.name) + ' is ' + (-diff) + ' samples te lang');
-        outLen[lastFree >= 0 ? lastFree : n - 1] += diff;
-      }
-      for (i = 0; i < n; i++) if (outLen[i] < 1) fail('fragment ' + fr[i].id + ' krijgt een doelduur van ' + outLen[i] + ' samples; blok ' + q(block.name) + ' is te krap');
-      for (i = 0; i < n - 1; i++) ov[i] = Math.min(ov[i], outLen[i], outLen[i + 1]);
-      if (exact) {
-        var d2 = total - contentLen();
-        if (d2 !== 0) outLen[lastFree] += d2;
-      }
-      var C = 1;
-      fr.forEach(function (f) { C = Math.max(C, Store.audio[f.source].channels.length); });
-      var out = [];
-      for (c = 0; c < C; c++) out.push(new Float32Array(total));
-      var micro = Math.round(CONSTANTS.MICROFADE_MS / 1000 * sr);
-      var duckRamp = Math.round(CONSTANTS.DUCK_RAMP_MS / 1000 * sr);
-      // 6. startposities
-      var start = 0, endPos = 0;
-      for (i = 0; i < n; i++) {
-        var f = fr[i], L = outLen[i];
-        // 4. stretchen of resamplen (cache)
-        var raw = rawFragment(recipe, f, L, warnings);
-        // 5. gain en omhulling
-        var g = new Float32Array(L);
-        g.fill(dbToLin(f.gainDb || 0));
-        var left = null, right = null;
-        if (i === 0) left = { kind: 'fade', len: Math.round((f.fadeInMs || 0) / 1000 * sr), own: true };
-        else {
-          var tl = tr[i - 1];
-          if (tl.type === 'crossfade' || tl.type === 'fade_in_b') left = { kind: 'curve', len: ov[i - 1], curve: tl.curve || 'equal_power' };
-          else left = { kind: 'fade', len: micro };
-        }
-        if (i === n - 1) right = { kind: 'fade', len: Math.round((f.fadeOutMs || 0) / 1000 * sr), own: true };
-        else {
-          var trr = tr[i];
-          if (trr.type === 'crossfade' || trr.type === 'fade_out_a') right = { kind: 'curve', len: ov[i], curve: trr.curve || 'equal_power' };
-          else if (trr.type === 'duck') right = { kind: 'duck', len: ov[i], level: dbToLin(typeof trr.duckDb === 'number' ? trr.duckDb : CONSTANTS.DUCK_DEFAULT_DB), ramp: Math.min(duckRamp, Math.floor(ov[i] / 2)) };
-          else right = { kind: 'fade', len: micro };
-        }
-        // Fades/overgangen samen langer dan het fragment → fades evenredig inkorten
-        // (overgangscurves liggen vast: die bepalen de uitlijning).
-        if (left.len + right.len > L) {
-          var fixed = (left.kind !== 'fade' ? left.len : 0) + (right.kind !== 'fade' ? right.len : 0);
-          var flex = (left.kind === 'fade' ? left.len : 0) + (right.kind === 'fade' ? right.len : 0);
-          var room = Math.max(0, L - fixed), sc = flex > 0 ? Math.min(1, room / flex) : 1;
-          if (left.kind === 'fade') left.len = Math.floor(left.len * sc);
-          if (right.kind === 'fade') right.len = Math.floor(right.len * sc);
-          if ((left.own || right.own) && sc < 1) warnings.push('fragment ' + f.id + ': fades samen langer dan het fragment; evenredig ingekort');
-        }
-        if (left.len > 0) { if (left.kind === 'curve') curveIn(g, left.len, left.curve); else fadeInGain(g, left.len); }
-        if (right.len > 0) {
-          if (right.kind === 'curve') curveOut(g, L, right.len, right.curve);
-          else if (right.kind === 'duck') { if (right.ramp > 0) duckOut(g, L, right.len, right.level, right.ramp); else curveOut(g, L, right.len, 'linear'); }
-          else fadeOutGain(g, L, right.len);
-        }
-        var RC = raw.length;
-        for (c = 0; c < C; c++) {
-          var rc = raw[c % RC], dst = out[c];
-          var lim = Math.min(L, total - start);
-          for (k = 0; k < lim; k++) dst[start + k] += rc[k] * g[k];
-        }
-        endPos = start + L;
-        if (i < n - 1) start = start + L - ov[i] + gp[i];
-      }
-      // 7. invariant
-      if (out[0].length !== total || (exact && endPos !== total) || endPos > total) {
-        throw new Error('Interne fout: lengte-invariant geschonden in blok ' + block.id + ' (uitvoer ' + endPos + ' samples, verwacht ' + total + ')');
-      }
-      var peak = 0;
-      for (c = 0; c < C; c++) { var oc = out[c]; for (k = 0; k < total; k++) { var av = oc[k] < 0 ? -oc[k] : oc[k]; if (av > peak) peak = av; } }
-      var clipped = peak > 1;
-      if (clipped) warnings.push('blok ' + q(block.name) + ': piek ' + linToDb(peak) + ' dBFS boven 0 dBFS; bij export begrensd op ±1,0 (overweeg gainDb lager of normalize)');
-      rendered[block.id] = { sampleRate: sr, channels: out };
-      return { block: block.id, duration: total / sr, samples: total, channels: C, peakDb: linToDb(peak), peak: peak, clipped: clipped, warnings: warnings };
+    function renderBlock(recipe, block, onProgress) {
+      var r = Renderer.render(recipe, Store.audio, block, { cache: renderCache, onProgress: onProgress });
+      rendered[block.id] = { sampleRate: r.sampleRate, channels: r.channels };
+      return { block: block.id, duration: r.stats.duration, samples: r.stats.samples, channels: r.channels.length,
+        peakDb: r.stats.peakDb, peak: r.peak, clipped: r.stats.clipped, warnings: r.warnings };
     }
 
     /* ----------------------------- Commands ---------------------------- */
