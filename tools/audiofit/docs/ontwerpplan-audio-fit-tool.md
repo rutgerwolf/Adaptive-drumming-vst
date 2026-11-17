@@ -1,7 +1,10 @@
 # Ontwerpplan: Audio Fit Tool
 
-Versie 0.5 — 17 november 2026
+Versie 0.6 — 17 november 2026
 Status: fase 1 gebouwd (v0.1.0). Geschreven als bouwinstructie voor een AI-codeassistent.
+
+Wijzigingen t.o.v. 0.5:
+- Fase 5: voice-over-recorder met loopback-kalibratie van de latency (§6.11).
 
 Wijzigingen t.o.v. 0.4:
 - Open vragen §14 beantwoord: er klinkt altijd muziek; voice-over ligt als tweede laag over een deel van het blok, over andere muziek dan het deel zonder voice-over. Nieuw §6.10 (stemspoor) en recept `version: 2`.
@@ -258,6 +261,19 @@ Renderen (aanvulling op §7.3): na stap 6 de ducking-omhullende op de muziekbuff
 
 Bloktijdlijn (editor): tweede rij onder de muziek met de stemfragmenten op hun positie; ducking-zones gearceerd in de muziekrij.
 
+### 6.11 Voice-over-recorder (fase 5)
+
+Opnemen terwijl het blok speelt, met koptelefoon; de opname wordt direct een stemfragment op de juiste plek.
+
+- **Invoer**: `getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false, deviceId}})`; microfoonkeuze (onthouden in `localStorage`, met try/catch). Ruwe PCM opnemen via `AudioWorklet` (module uit `Blob`), terugval `ScriptProcessorNode`. Geen `MediaRecorder` (verliesgevend).
+- **Niveaumeter** (piek + RMS, clip-indicator) zichtbaar zodra de microfoon open staat.
+- **Kalibratie latency (loopback)**: gebruiker houdt de koptelefoon tegen de microfoon en drukt "Kalibreer". De tool speelt 5 korte klikken (1 kHz-burst van 5 ms, interval 600 ms) en neemt tegelijk op. Per klik: detectie van het begin (eerste sample boven 50% van de piek rond de verwachte positie, venster ±300 ms). Latency = mediaan van (gedetecteerd − verwacht). Spreiding > 5 ms of minder dan 3 klikken gevonden → melding "niet betrouwbaar, harder zetten / dichter bij de microfoon". Resultaat per microfoon+uitvoer onthouden. Handmatige correctie daarna in stappen van 10 ms (bereik ±500 ms); eis gebruiker: 0,1 s precisie volstaat.
+- **Opnemen**: gebruiker kiest blok en (optioneel) startpunt; aftellen (instelbaar 0–4 tellen, korte piep alleen in de koptelefoon) → blok speelt vanaf startpunt (gerenderde mix van het blok, ducking uitgeschakeld tijdens opname als optie) en de microfoon neemt op. Stop = knop of Spatie. Opname wordt gecorrigeerd met de latency (begin wegknippen) en als bron `opname-<blok>-<nnn>.wav` toegevoegd (`attachAudio`).
+- **Plaatsing**: na stoppen de stemopname automatisch als stemfragment (`add_voice`) met als anker het muziekfragment waarin de opname begon en `offset` = starttijd − ankerstart; in/uit = hele opname (snap uit). Daarna normaal te trimmen.
+- **Takes**: elke opname is een nieuwe bron; het vorige stemfragment op die plek wordt niet overschreven maar de nieuwe take komt erbij met `acceptOverlap:false` → bestaande overlap-waarschuwing; knop "vervang vorige take" verwijdert het vorige stemfragment.
+- **Opslaan**: elke opname is als WAV te downloaden (en "alle opnames" in één keer); waarschuwing bij niet-opgeslagen opnames (beforeunload), omdat het recept bronnen op bestandsnaam koppelt.
+- **Vereisten/browsercheck**: microfoon beschikbaar (`navigator.mediaDevices`), toestemming, AudioWorklet. `file://` is een secure context (FEIT Chromium, getest); Firefox ONBEKEND.
+
 ## 7. Algoritmen (kern)
 
 ### 7.1 WSOLA (toonhoogte behouden)
@@ -460,7 +476,8 @@ Zelftest: `window.__selftest()` in de editor en `node audiofit-cli.mjs selftest`
 | 2 | Meerdere fragmenten per blok, fit-modi, alle overgangstypen, ratio-indicatie, A/B, cache, undo/redo; stemspoor met anker, ducking (§6.10); render in Worker | Blokken van 15 s met overlap en voice-over |
 | 3 | Recept opslaan/laden, route A (context kopiëren, commando's uitvoeren), zelftest | Aansturing via een Claude-chat |
 | 4 | Vereisten controleren/installeren (Node, ffmpeg); `audiofit-cli.mjs`: `doctor`, `schema`, `validate`, `report`, `exec`, `render`, `probe`, `selftest` | Aansturing door Claude Code |
-| 5 (optioneel) | Externe stretch-engine, ZIP-export, normaliseren per reeks | Uitbreidingen |
+| 5 | Voice-over-recorder (§6.11): opnemen tijdens afspelen, loopback-kalibratie, automatische plaatsing | Stem inspreken in de tool |
+| 6 (optioneel) | Externe stretch-engine, ZIP-export, normaliseren per reeks | Uitbreidingen |
 
 Elke fase levert een werkend geheel op.
 
