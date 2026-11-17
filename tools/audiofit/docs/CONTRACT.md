@@ -54,3 +54,31 @@ Node laadt het met `new Function(code + '\nreturn AudioFit;')()`. Geen `import`/
 ## Ids
 
 Blokken `b1, b2, …`, fragmenten `f1, f2, …` (oplopend, nooit hergebruikt binnen een sessie; na `import_recipe` doorgaan vanaf hoogste bestaande nummer).
+
+---
+
+# Aanvulling fase 2 (ontwerp v0.5, §6.10 en §6.7)
+
+## Recept version 2
+- `import_recipe` accepteert version 1 (krijgt `voice: []`, `duckDb: -6`, `duckMs: 150`) en 2. `get_state` geeft altijd version 2.
+- Per blok: `voice: [...]`, `duckDb`, `duckMs`. Stemfragment-velden: zie ontwerp §6.10 (incl. `acceptOverlap`). Ids `v1, v2, …` (zelfde regels als `f`).
+
+## Nieuwe/gewijzigde commando's
+- `add_voice` → `{ id, in, out, start, end }` (start/end = seconden in het blok na fit).
+- `update_voice`, `delete_voice`; `update_block` met `duckDb`, `duckMs`.
+- `delete_fragment` op een anker → `ok:false` met de stem-ids.
+- `move_fragment`, `duplicate_fragment`, `set_transition` moeten volledig werken (fase 2 UI gebruikt ze).
+- `fit_report` per blok extra: `voice: [{ id, anchor, start, end, sourceDuration, targetDuration, ratio, status }]`, `duck: [{ start, end }]` (samengevoegde ducking-zones incl. hellingen), `overlaps: [{ a, b, duration, accepted }]`, en per muziekfragment `start` en `end` (uitvoertijd in het blok) zodat de editor de tijdlijn kan tekenen. Per overgang `{ index, type, ms, start, end }` (uitvoertijd van de overlap/gap).
+- Niet-geaccepteerde stem-overlap: `fit_report.exportable` blijft `true`, maar `warnings` bevat een regel en `overlaps[].accepted=false`. `render_block`/`export_block` geven bij niet-geaccepteerde overlap `ok:false` met tekst die `acceptOverlap` noemt; de editor vraagt dan "Accepteren?" en roept `update_voice {acceptOverlap:true}` aan.
+
+## Pure render-API voor de Worker
+- `AudioFit.renderBlockPure(recipe, audio, blockId, { onProgress, cache })` → `{ sampleRate, channels: Float32Array[], stats: {duration, samples, peakDb, clipped}, warnings }`.
+  - `recipe`: zoals `get_state`; `audio`: `{ [bronnaam]: { sampleRate, channels } }` (al op werkfrequentie).
+  - `onProgress(fraction 0..1, label)` wordt minstens per ~20 WSOLA-frames aangeroepen; `label` bijv. `"muziek 2/3 rekken"`, `"stem 1/1 rekken"`, `"mixen"`.
+  - `cache`: optioneel object (Map-achtig) dat de aanroeper bewaart tussen aanroepen; sleutel per §7.3 stap 4 (+ preset).
+  - Gebruikt geen interne state; gooit `Error` met dezelfde Nederlandse tekst als `render_block` zou geven.
+- `AudioFit.render_block` in de hoofdthread blijft werken (CLI, tests).
+
+## Worker (editor-zijde)
+- Editor maakt de Worker uit een `Blob` met `document.getElementById('audiofit-core').textContent` + een klein worker-script. Protocol: `{type:'audio', name, sampleRate, channels}` (eenmalig per bron, transfer van kopieën), `{type:'render', jobId, recipe, blockId}` → `{type:'progress', jobId, fraction, label}` … `{type:'done', jobId, sampleRate, channels, stats, warnings}` of `{type:'error', jobId, message}`. Annuleren: editor beëindigt de Worker (`terminate`) en start een nieuwe (bronnen opnieuw sturen).
+- Fallback als Worker niet kan (bijv. file:// beperking): renderen in de hoofdthread met `renderBlockPure` en `onProgress` via `await`-pauzes; voortgang blijft zichtbaar.

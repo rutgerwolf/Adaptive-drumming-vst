@@ -8,6 +8,8 @@ Wijzigingen t.o.v. 0.4:
 - Voice-over hangt aan een muziekfragment (anker + offset) en schuift mee met de fit.
 - Stem standaard op oorspronkelijke snelheid; per stemfragment optioneel een doelduur (licht rekken/indikken, preset `voice`).
 - Automatische ducking van de muziek onder de stem, instelbaar per blok.
+- Overlappende stemfragmenten: waarschuwing die de gebruiker kan accepteren.
+- Rekenwerk in een Worker met zichtbare voortgang (balk + percentage) en UI die bruikbaar blijft.
 - Tijden in het recept met 6 decimalen (was 3), zodat snap-punten behouden blijven.
 
 Wijzigingen t.o.v. 0.3:
@@ -209,6 +211,7 @@ Regels:
 - Voorbeluisteren van alleen de overgang: 2 s ervoor tot 2 s erna.
 
 ### 6.7 Voorbeluisteren
+- Al het stretch-/renderwerk draait in een Worker. Zolang er gerekend wordt: voortgangsbalk met percentage en wat er bezig is ("Blok 1 · fragment 2/3 rekken"), in de statusbalk en op het betreffende blok; knoppen die op het resultaat wachten tonen een bezig-toestand. De UI blijft bedienbaar. Een nieuwe render voor hetzelfde blok annuleert de lopende.
 - Fragment: origineel / gefit (A/B). Blok: geheel, met cursor. Overgang: zie §6.6.
 - Stretchen bij de eerste keer afspelen; resultaat in cache; voortgang zichtbaar op het fragment.
 
@@ -239,11 +242,12 @@ Stemfragment (`voice[i]`):
 | `targetDuration` | `null` = oorspronkelijke snelheid; getal = gerekt/ingedikt tot deze duur |
 | `preset` | standaard `"voice"`; `mode` standaard `"pitch"` |
 | `gainDb`, `fadeInMs`, `fadeOutMs` | zoals bij muziek (fades standaard 8 ms) |
+| `acceptOverlap` | `false` (standaard); `true` = overlap met een eerder stemfragment bewust geaccepteerd |
 
 Regels:
 - Starttijd in het blok = uitvoerstart van het anker + `offset`. Verandert de fit, dan schuift de stem mee.
 - Stem moet volledig binnen het blok vallen; anders fout met het aantal seconden te lang (geen render/export).
-- Stemfragmenten mogen elkaar niet overlappen; anders fout met de betrokken ids.
+- Overlappende stemfragmenten: waarschuwing met de betrokken ids en de overlapduur. De gebruiker kan de overlap **accepteren** (`acceptOverlap: true` op het later startende stemfragment); daarna geldt het niet meer als probleem en wordt beide gewoon opgeteld gerenderd. Verandert de overlap later (andere fit, offset), dan blijft de acceptatie staan maar toont de waarschuwing de nieuwe duur.
 - Ratio-indicatie zoals §6.5; bij `targetDuration` buiten oranje een waarschuwing ("stem duidelijk hoorbaar versneld/vertraagd").
 - Muziekfragment verwijderen dat anker is → fout met de lijst stem-ids (eerst stem verwijderen of verhangen).
 - Stem dupliceren/verplaatsen naar ander blok: niet in fase 2.
@@ -334,7 +338,7 @@ Curves over een overlap van `n` samples, `x = k/n`: `equal_power` uit = `cos(x·
 | `duplicate_fragment` | `fragment` | nieuw fragment-id |
 | `delete_fragment` | `fragment` | — |
 | `add_voice` | `block`, `source`, `in`, `out`, `anchor`, `offset?`, `targetDuration?`, `snap?`, `preset?`, `mode?` | stem-id, werkelijke in/uit, starttijd in blok |
-| `update_voice` | `voice`, `in?`, `out?`, `anchor?`, `offset?`, `targetDuration?`, `gainDb?`, `fadeInMs?`, `fadeOutMs?`, `preset?`, `mode?` | — |
+| `update_voice` | `voice`, `in?`, `out?`, `anchor?`, `offset?`, `targetDuration?`, `acceptOverlap?`, `gainDb?`, `fadeInMs?`, `fadeOutMs?`, `preset?`, `mode?` | — |
 | `delete_voice` | `voice` | — |
 | `set_transition` | `block`, `index`, `type`, `ms?`, `curve?`, `duckDb?` | — |
 | `fit_report` | `block?` (leeg = alle) | per fragment: brondur, doeldur, ratio, status; per blok: klopt of afwijking |
