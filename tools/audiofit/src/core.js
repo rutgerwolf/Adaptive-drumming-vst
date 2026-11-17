@@ -856,7 +856,7 @@ var AudioFit = (function () {
   /* =====================================================================
    * Renderer — blok samenstellen (§7.3) + stemspoor en ducking (§6.10).
    * Puur: werkt op (recept, audio, blok, {cache, onProgress}) zonder interne
-   * state. Gebruikt door render_block (hoofdthread) én renderBlockPure (Worker),
+   * state. Gebruikt door render_block (hoofdthread) én renderBlockPure (achtergrondthread),
    * zodat beide sample-identiek zijn.
    * ===================================================================== */
   var Renderer = (function () {
@@ -1117,7 +1117,7 @@ var AudioFit = (function () {
     return { render: render };
   })();
 
-  // Pure render-API voor de Worker (contract fase 2). Geen interne state.
+  // Pure render-API voor de achtergrondthread (contract fase 2). Geen interne state.
   function renderBlockPure(recipe, audio, blockId, opts) {
     var nr = Validator.normalizeRecipe(recipe);
     if (nr.problems.length) fail('recept bevat ' + nr.problems.length + ' probleem/problemen: ' + nr.problems.join('; '));
@@ -1169,7 +1169,7 @@ var AudioFit = (function () {
       audioVersion: 0,
       undo: [], redo: [],
       listeners: [],
-      counters: { b: 0, f: 0 }
+      counters: { b: 0, f: 0, v: 0 }
     };
     function audioNames() { return Object.keys(Store.audio); }
     function notify() {
@@ -1193,6 +1193,7 @@ var AudioFit = (function () {
       recipe.blocks.forEach(function (b) {
         var mb = /^b(\d+)$/.exec(b.id); if (mb) Store.counters.b = Math.max(Store.counters.b, +mb[1]);
         b.fragments.forEach(function (f) { var mf = /^f(\d+)$/.exec(f.id); if (mf) Store.counters.f = Math.max(Store.counters.f, +mf[1]); });
+        (b.voice || []).forEach(function (v) { var mv = /^v(\d+)$/.exec(v.id); if (mv) Store.counters.v = Math.max(Store.counters.v, +mv[1]); });
       });
     }
     function nextId(kind, recipe) {
@@ -1290,6 +1291,35 @@ var AudioFit = (function () {
       var durMs = (tout - tin) * 1000;
       if (durMs < CONSTANTS.MIN_FRAGMENT_MS - 1e-9) fail('fragment is ' + (Math.round(durMs * 10) / 10) + ' ms lang; minimaal ' + CONSTANTS.MIN_FRAGMENT_MS + ' ms');
     }
+    function getVoice(recipe, id) {
+      for (var i = 0; i < recipe.blocks.length; i++) {
+        var b = recipe.blocks[i], vs = b.voice || [];
+        for (var j = 0; j < vs.length; j++) if (vs[j].id === id) return { block: b, index: j, voice: vs[j] };
+      }
+      var list = [];
+      recipe.blocks.forEach(function (b) { (b.voice || []).forEach(function (v) { list.push(v.id + ' (' + b.name + ')'); }); });
+      fail('stem ' + q(id) + ' bestaat niet; ' + (list.length ? 'bestaande stemfragmenten: ' + list.join(', ') : 'er zijn nog geen stemfragmenten; voeg er een toe met add_voice'));
+    }
+    function checkAnchor(block, anchor) {
+      var ids = block.fragments.map(function (f) { return f.id; });
+      if (ids.indexOf(anchor) < 0) {
+        fail('anker ' + q(anchor) + ' is geen muziekfragment van blok ' + q(block.name) + ' (' + block.id + '); ' +
+          (ids.length ? 'kies uit: ' + ids.join(', ') : 'voeg eerst een muziekfragment toe met add_fragment'));
+      }
+    }
+    function voicesOnAnchor(block, fragId) {
+      return (block.voice || []).filter(function (v) { return v.anchor === fragId; }).map(function (v) { return v.id; });
+    }
+    // Resultaat van add_voice/update_voice: { id, in, out, start, end } (+ warnings over deze stem, indien aanwezig).
+    function voiceResult(block, v) {
+      var rep = computeFit(block), e = null;
+      rep.voice.forEach(function (x) { if (x.id === v.id) e = x; });
+      var res = { id: v.id, 'in': v['in'], out: v.out, start: e ? e.start : null, end: e ? e.end : null };
+      var re = new RegExp('\\b' + v.id + '\\b');
+      var w = rep.ok ? rep.warnings.filter(function (x) { return re.test(x); }) : [rep.error];
+      if (w.length) res.warnings = w;
+      return res;
+    }
 
     /* ----------------------------- Renderer ---------------------------- */
     // Zelfde pure Renderer als renderBlockPure; hier met de cache en audio van de instantie.
@@ -1305,6 +1335,10 @@ var AudioFit = (function () {
     /* ----------------------------- Commands ---------------------------- */
     var T_TIME = { type: ['number', 'string'], description: 'seconden of "@markernaam"' };
     var T_REF = { type: 'string', minLength: 1 };
+    var T_OFFSET = { type: 'number', description: 'seconden na het begin van het anker in de uitvoer (mag negatief)' };
+    var T_VTD = { type: ['number', 'null'], exclusiveMinimum: 0, description: 'doelduur van de stem in seconden; null = oorspronkelijke snelheid' };
+    var T_DUCKDB = { type: 'number', maximum: 0, description: 'ducking van de muziek onder de stem in dB (≤ 0; 0 = uit)' };
+    var T_DUCKMS = { type: 'number', minimum: 0, maximum: CONSTANTS.VOICE_DUCK_MAX_MS, description: 'duur van de ducking-hellingen in ms' };
     function obj(props, required) { return { type: 'object', properties: props, required: required || [], additionalProperties: false }; }
 
     var commands = [
@@ -1361,29 +1395,32 @@ var AudioFit = (function () {
 
       { name: 'create_block', description: 'Maakt een nieuw blok met een doelduur in seconden (3 decimalen).',
         schema: obj({ name: { type: 'string' }, targetDuration: { type: 'number', exclusiveMinimum: 0, description: 'seconden' },
-          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES } }, []),
+          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES }, duckDb: T_DUCKDB, duckMs: T_DUCKMS }, []),
         run: function (a, ctx) {
           var id = nextId('b', ctx.recipe);
           var td = a.targetDuration !== undefined ? a.targetDuration : ctx.recipe.defaults.blockDuration;
           var b = { id: id, name: a.name || ('Blok ' + (ctx.recipe.blocks.length + 1)), targetDuration: Math.round(td * 1000) / 1000,
-            fitMode: a.fitMode || 'proportional', fragments: [], transitions: [] };
+            fitMode: a.fitMode || 'proportional', duckDb: a.duckDb !== undefined ? a.duckDb : CONSTANTS.VOICE_DUCK_DEFAULT_DB,
+            duckMs: a.duckMs !== undefined ? a.duckMs : CONSTANTS.VOICE_DUCK_DEFAULT_MS, fragments: [], transitions: [], voice: [] };
           if (!(b.targetDuration > 0)) fail('targetDuration moet groter dan 0 zijn (na afronden op 3 decimalen)');
           ctx.recipe.blocks.push(b);
           return { id: id };
         } },
 
-      { name: 'update_block', description: 'Wijzigt naam, doelduur of fit-modus van een blok.',
+      { name: 'update_block', description: 'Wijzigt naam, doelduur, fit-modus of ducking (duckDb ≤ 0, 0 = uit; duckMs) van een blok.',
         schema: obj({ block: T_REF, name: { type: 'string' }, targetDuration: { type: 'number', exclusiveMinimum: 0 },
-          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES } }, ['block']),
+          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES }, duckDb: T_DUCKDB, duckMs: T_DUCKMS }, ['block']),
         run: function (a, ctx) {
           var b = getBlock(ctx.recipe, a.block);
           if (a.name !== undefined) b.name = a.name;
           if (a.targetDuration !== undefined) { var td = Math.round(a.targetDuration * 1000) / 1000; if (!(td > 0)) fail('targetDuration moet groter dan 0 zijn'); b.targetDuration = td; }
           if (a.fitMode !== undefined) b.fitMode = a.fitMode;
+          if (a.duckDb !== undefined) b.duckDb = a.duckDb;
+          if (a.duckMs !== undefined) b.duckMs = a.duckMs;
           return null;
         } },
 
-      { name: 'delete_block', description: 'Verwijdert een blok met zijn fragmenten.', schema: obj({ block: T_REF }, ['block']),
+      { name: 'delete_block', description: 'Verwijdert een blok met zijn fragmenten en stemfragmenten.', schema: obj({ block: T_REF }, ['block']),
         run: function (a, ctx) {
           var b = getBlock(ctx.recipe, a.block);
           ctx.recipe.blocks.splice(ctx.recipe.blocks.indexOf(b), 1);
@@ -1433,6 +1470,11 @@ var AudioFit = (function () {
           var dest = a.block !== undefined ? getBlock(r, a.block) : loc.block;
           var maxPos = dest === loc.block ? dest.fragments.length - 1 : dest.fragments.length;
           if (a.position > maxPos) fail('position ' + a.position + ' ligt buiten het blok; kies 0 t/m ' + maxPos);
+          if (dest !== loc.block) {
+            var vOn = voicesOnAnchor(loc.block, loc.fragment.id);
+            if (vOn.length) fail('fragment ' + loc.fragment.id + ' is het anker van stem ' + vOn.join(', ') + ' en kan niet naar een ander blok; ' +
+              'verwijder die stem(men) eerst (delete_voice) of hang ze aan een ander fragment (update_voice met anchor)');
+          }
           removeFragmentAt(loc.block, loc.index);
           insertFragment(r, dest, loc.fragment, a.position);
           return null;
@@ -1446,8 +1488,62 @@ var AudioFit = (function () {
           return { id: f.id };
         } },
 
-      { name: 'delete_fragment', description: 'Verwijdert een fragment (en de bijbehorende overgang).', schema: obj({ fragment: T_REF }, ['fragment']),
-        run: function (a, ctx) { var loc = getFragment(ctx.recipe, a.fragment); removeFragmentAt(loc.block, loc.index); return null; } },
+      { name: 'delete_fragment', description: 'Verwijdert een muziekfragment (en de bijbehorende overgang). Geweigerd als het fragment anker van een stem is.',
+        schema: obj({ fragment: T_REF }, ['fragment']),
+        run: function (a, ctx) {
+          var loc = getFragment(ctx.recipe, a.fragment);
+          var vOn = voicesOnAnchor(loc.block, loc.fragment.id);
+          if (vOn.length) fail('fragment ' + loc.fragment.id + ' is het anker van stem ' + vOn.join(', ') + '; verwijder eerst die stem(men) (delete_voice) ' +
+            'of hang ze aan een ander fragment (update_voice met anchor)');
+          removeFragmentAt(loc.block, loc.index);
+          return null;
+        } },
+
+      { name: 'add_voice', description: 'Voegt een stemfragment (voice-over) toe dat bovenop de muziek klinkt. Start in het blok = uitvoerstart van het anker (muziekfragment-id) + offset (s, mag negatief); schuift mee met de fit. targetDuration null = oorspronkelijke snelheid. Resultaat: id, werkelijke in/uit, start/end in het blok.',
+        schema: obj({ block: T_REF, source: T_REF, 'in': T_TIME, out: T_TIME, anchor: { type: 'string', minLength: 1, description: 'id van een muziekfragment in dit blok' },
+          offset: T_OFFSET, targetDuration: T_VTD, snap: { type: 'boolean' },
+          preset: { type: 'string', 'enum': CONSTANTS.PRESETS }, mode: { type: 'string', 'enum': CONSTANTS.MODES }, gainDb: { type: 'number' },
+          fadeInMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS }, fadeOutMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS },
+          acceptOverlap: { type: 'boolean' } }, ['block', 'source', 'in', 'out', 'anchor']),
+        run: function (a, ctx) {
+          var r = ctx.recipe, b = getBlock(r, a.block), s = getSource(r, a.source);
+          checkAnchor(b, a.anchor);
+          var tin = resolveTime(s, a['in'], 'in'), tout = resolveTime(s, a.out, 'out');
+          if (a.snap !== false) { tin = snapToZero(s.name, tin); tout = snapToZero(s.name, tout); }
+          tin = roundT(tin); tout = roundT(tout);
+          checkFragmentSpan(s, tin, tout);
+          var v = { id: nextId('v', r), source: s.name, 'in': tin, out: tout, anchor: a.anchor, offset: roundT(a.offset || 0),
+            targetDuration: a.targetDuration != null ? roundT(a.targetDuration) : null,
+            mode: a.mode || 'pitch', preset: a.preset || CONSTANTS.VOICE_DEFAULT_PRESET, gainDb: a.gainDb || 0,
+            fadeInMs: a.fadeInMs !== undefined ? a.fadeInMs : r.defaults.fadeMs, fadeOutMs: a.fadeOutMs !== undefined ? a.fadeOutMs : r.defaults.fadeMs,
+            acceptOverlap: !!a.acceptOverlap };
+          if (!b.voice) b.voice = [];
+          b.voice.push(v);
+          return voiceResult(b, v);
+        } },
+
+      { name: 'update_voice', description: 'Wijzigt een stemfragment: in/out (met snap), anchor, offset, targetDuration (null = oorspronkelijke snelheid), acceptOverlap, gain, fades, preset, mode.',
+        schema: obj({ voice: T_REF, 'in': T_TIME, out: T_TIME, snap: { type: 'boolean' }, anchor: { type: 'string', minLength: 1 }, offset: T_OFFSET,
+          targetDuration: T_VTD, acceptOverlap: { type: 'boolean' }, gainDb: { type: 'number' },
+          fadeInMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS }, fadeOutMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS },
+          preset: { type: 'string', 'enum': CONSTANTS.PRESETS }, mode: { type: 'string', 'enum': CONSTANTS.MODES } }, ['voice']),
+        run: function (a, ctx) {
+          var loc = getVoice(ctx.recipe, a.voice), v = loc.voice, s = getSource(ctx.recipe, v.source);
+          var tin = v['in'], tout = v.out;
+          if (a['in'] !== undefined) { tin = resolveTime(s, a['in'], 'in'); if (a.snap !== false) tin = snapToZero(s.name, tin); tin = roundT(tin); }
+          if (a.out !== undefined) { tout = resolveTime(s, a.out, 'out'); if (a.snap !== false) tout = snapToZero(s.name, tout); tout = roundT(tout); }
+          checkFragmentSpan(s, tin, tout);
+          if (a.anchor !== undefined) checkAnchor(loc.block, a.anchor);
+          v['in'] = tin; v.out = tout;
+          if (a.anchor !== undefined) v.anchor = a.anchor;
+          if (a.offset !== undefined) v.offset = roundT(a.offset);
+          if (a.targetDuration !== undefined) v.targetDuration = a.targetDuration === null ? null : roundT(a.targetDuration);
+          ['acceptOverlap', 'gainDb', 'fadeInMs', 'fadeOutMs', 'preset', 'mode'].forEach(function (k) { if (a[k] !== undefined) v[k] = a[k]; });
+          return voiceResult(loc.block, v);
+        } },
+
+      { name: 'delete_voice', description: 'Verwijdert een stemfragment.', schema: obj({ voice: T_REF }, ['voice']),
+        run: function (a, ctx) { var loc = getVoice(ctx.recipe, a.voice); loc.block.voice.splice(loc.index, 1); return null; } },
 
       { name: 'set_transition', description: 'Stelt de overgang in tussen fragment index en index+1: type, ms (overlap of stilte), curve, duckDb.',
         schema: obj({ block: T_REF, index: { type: 'integer', minimum: 0 }, type: { type: 'string', 'enum': CONSTANTS.TRANSITION_TYPES },
@@ -1468,19 +1564,19 @@ var AudioFit = (function () {
           return clone(t);
         } },
 
-      { name: 'fit_report', description: 'Fit-rapport: per fragment brondur, doeldur, ratio, status; per blok of het klopt of de afwijking.',
+      { name: 'fit_report', description: 'Fit-rapport: per fragment brondur, doeldur, ratio, status en start/end in het blok; per overgang start/end; stemmen (voice), ducking-zones (duck), stem-overlaps; per blok of het klopt of de afwijking.',
         schema: obj({ block: T_REF }, []),
         run: function (a, ctx) {
           var blocks = a.block !== undefined ? [getBlock(ctx.recipe, a.block)] : ctx.recipe.blocks;
           return blocks.map(function (b) {
             var rep = computeFit(b);
-            rep.missingSources = b.fragments.map(function (f) { return f.source; })
+            rep.missingSources = b.fragments.concat(b.voice || []).map(function (f) { return f.source; })
               .filter(function (x, i, arr) { return arr.indexOf(x) === i && !Store.audio[x]; });
             return rep;
           });
         } },
 
-      { name: 'render_block', description: 'Rendert een blok (fit + stretch + overgangen). Resultaat: duur, samples, piek in dBFS, clipping.',
+      { name: 'render_block', description: 'Rendert een blok (fit + stretch + overgangen + stemspoor met ducking). Resultaat: duur, samples, piek in dBFS, clipping.',
         schema: obj({ block: T_REF }, ['block']),
         run: function (a, ctx) {
           var r = renderBlock(ctx.recipe, getBlock(ctx.recipe, a.block));
@@ -1658,6 +1754,7 @@ var AudioFit = (function () {
       history: function () { return { undo: Store.undo.length, redo: Store.redo.length }; },
       validateRecipe: function (r) { var nr = Validator.normalizeRecipe(r); return { ok: !nr.problems.length, problems: nr.problems }; },
       computeFit: function (block) { return computeFit(block); },
+      renderBlockPure: renderBlockPure,
       wav: { encode: WavCodec.encode, decode: WavCodec.decode },
       stretch: function (channels, outLength, opts) { return Stretch.run(channels, outLength, opts).channels; },
       stretchInfo: function (channels, outLength, opts) { return Stretch.run(channels, outLength, opts); },
@@ -1812,6 +1909,32 @@ var AudioFit = (function () {
       var y = A.getRendered('b1').channels[0], b = sr, w = Math.round(0.02 * sr), mx = 0;
       for (var i = Math.max(1, b - w); i < Math.min(y.length, b + w); i++) mx = Math.max(mx, Math.abs(y[i] - y[i - 1]));
       return { ok: mx <= 0.1, detail: 'grootste samplesprong rond de grens: ' + mx.toFixed(4) };
+    });
+
+    // Stemspoor (§6.10): stem op de juiste sample-positie, ducking midden in de zone ≈ 10^(duckDb/20)
+    check('§6.10 stem: juiste sample-positie (anker + offset) en ducking-niveau midden in de zone', function () {
+      var A = inst();
+      var duckDb = CONSTANTS.VOICE_DUCK_DEFAULT_DB, lvl = dbToLin(duckDb);
+      A.attachAudio('dc05.wav', { sampleRate: sr, channels: [new Float32Array(2 * sr).fill(0.5)] });
+      var vsrc = new Float32Array(sr), spikeAt = Math.round(0.5 * sr);
+      vsrc[spikeAt] = 0.25;
+      A.attachAudio('stem.wav', { sampleRate: sr, channels: [vsrc] });
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'V', targetDuration: 4.0 } },
+        { cmd: 'add_fragment', args: { block: 'b1', source: 'dc05.wav', 'in': 0, out: 2, snap: false } },
+        { cmd: 'add_fragment', args: { block: 'b1', source: 'dc05.wav', 'in': 0, out: 2, snap: false } },
+        { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } },
+        { cmd: 'add_voice', args: { block: 'b1', source: 'stem.wav', 'in': 0, out: 1, anchor: 'f2', offset: 0.3, snap: false } }]));
+      var rep = must(A.exec({ cmd: 'fit_report', args: { block: 'b1' } })).result[0];
+      must(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
+      var y = A.getRendered('b1').channels[0];
+      var expect = 2 * sr + Math.round(0.3 * sr) + spikeAt, found = -1, best = 0;
+      for (var i = 1; i < y.length; i++) { var dlt = y[i] - y[i - 1]; if (dlt > best) { best = dlt; found = i; } }
+      var z = rep.duck[0], mid = Math.round((z.start + z.end) / 2 * sr) - 50;
+      var gain = y[mid] / 0.5;
+      var ok = found === expect && Math.abs(best - 0.25) < 1e-6 && Math.abs(gain - lvl) < 1e-4 && Math.abs(y[Math.round(1.0 * sr)] - 0.5) < 1e-6 &&
+        Math.abs(rep.voice[0].start - 2.3) < 1e-9 && y.length === 4 * sr;
+      return { ok: ok, detail: 'stempiek op sample ' + found + ' (verwacht ' + expect + '); ducking midden in de zone ' + gain.toFixed(4) +
+        ' (verwacht ' + lvl.toFixed(4) + ' = 10^(' + duckDb + '/20)); zone ' + z.start.toFixed(3) + '–' + z.end.toFixed(3) + ' s' };
     });
 
     var ok = checks.every(function (c) { return c.ok; });

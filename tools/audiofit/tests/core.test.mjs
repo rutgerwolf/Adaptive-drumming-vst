@@ -20,21 +20,22 @@ function fresh(sr = SR) { const a = AF.create(); a.setSampleRate(sr); return a; 
 function ok(res) { assert.equal(res.ok, true, res.error); return res.result !== undefined ? res.result : res; }
 
 test('vorm en versie', () => {
-  assert.equal(AF.version, '0.1.0');
+  assert.equal(AF.version, '0.2.0');
   assert.equal(typeof AF.CONSTANTS, 'object');
   const names = AF.describe().map((d) => d.name);
   for (const n of ['get_state', 'list_sources', 'add_marker', 'update_marker', 'delete_marker', 'create_block', 'update_block',
     'delete_block', 'add_fragment', 'update_fragment', 'move_fragment', 'duplicate_fragment', 'delete_fragment', 'set_transition',
-    'fit_report', 'render_block', 'export_block', 'import_recipe', 'undo', 'redo']) assert.ok(names.includes(n), n);
+    'fit_report', 'render_block', 'export_block', 'import_recipe', 'undo', 'redo', 'add_voice', 'update_voice', 'delete_voice']) assert.ok(names.includes(n), n);
+  assert.equal(typeof AF.renderBlockPure, 'function');
   for (const d of AF.describe()) assert.equal(d.schema.type, 'object');
   assert.ok(!/\b(window|document|require\(|import |AudioContext|Worker|Blob)\b/.test(code), 'geen browser-API of modules in core.js');
 });
 
-test('selftest (criteria 2–7) is ok', () => {
+test('selftest (criteria 2–7 + stemcheck) is ok', () => {
   const r = AF.selftest();
   for (const c of r.checks) console.log((c.ok ? '  ✓ ' : '  ✗ ') + c.name + ' — ' + c.detail);
   console.log('  selftest totaal ' + r.ms + ' ms');
-  assert.equal(r.checks.length, 6);
+  assert.equal(r.checks.length, 7);
   assert.equal(r.ok, true, JSON.stringify(r.checks.filter((c) => !c.ok)));
 });
 
@@ -341,4 +342,282 @@ test('ratioStatus-grenzen', () => {
   assert.equal(AF.ratioStatus(0.6), 'red');
   assert.equal(AF.ratioStatus(2.1), 'blocked');
   assert.equal(AF.ratioStatus(0.4), 'blocked');
+});
+
+/* ===================== Fase 2: stemspoor, ducking, renderBlockPure ===================== */
+
+const dc = (v, dur, sr = SR) => new Float32Array(Math.round(dur * sr)).fill(v);
+// Blok met twee muziekfragmenten (dc 0,5) en een cut; ratio 1 → exacte kopie.
+function voiceSetup({ T = 4, music = 0.5 } = {}) {
+  const A = fresh();
+  A.attachAudio('m.wav', { sampleRate: SR, channels: [dc(music, 2)] });
+  A.attachAudio('v.wav', { sampleRate: SR, channels: [dc(0.2, 3)] });
+  A.attachAudio('nul.wav', { sampleRate: SR, channels: [dc(0, 3)] });
+  ok(A.execAll([
+    { cmd: 'create_block', args: { name: 'V', targetDuration: T } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 2, snap: false } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 2, snap: false } },
+    { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } }
+  ]));
+  return A;
+}
+
+test('recept version 1 importeren → version 2 met voice: [], duckDb −6, duckMs 150; version 2 behoudt stem', () => {
+  const A = fresh();
+  const v1 = { version: 1, sampleRate: 48000, sources: [{ name: 'a.wav', duration: 30, channels: 2, markers: [] }],
+    blocks: [{ id: 'b1', name: 'B', targetDuration: 10, fragments: [{ id: 'f1', source: 'a.wav', in: 0, out: 10 }] }] };
+  ok(A.exec({ cmd: 'import_recipe', args: { recipe: v1 } }));
+  let st = ok(A.exec({ cmd: 'get_state' }));
+  assert.equal(st.version, 2);
+  assert.deepEqual(st.blocks[0].voice, []);
+  assert.equal(st.blocks[0].duckDb, -6);
+  assert.equal(st.blocks[0].duckMs, 150);
+  assert.equal(ok(A.exec({ cmd: 'get_state' })).version, 2);
+  // version 2 met stem; ids lopen door
+  const v2 = JSON.parse(JSON.stringify(v1));
+  v2.version = 2; v2.blocks[0].duckDb = -9; v2.blocks[0].duckMs = 200;
+  v2.blocks[0].voice = [{ id: 'v7', source: 'a.wav', in: 12, out: 14, anchor: 'f1', offset: 1.5 }];
+  ok(A.exec({ cmd: 'import_recipe', args: { recipe: v2 } }));
+  st = ok(A.exec({ cmd: 'get_state' }));
+  assert.deepEqual(st.blocks[0].voice[0], { id: 'v7', source: 'a.wav', in: 12, out: 14, anchor: 'f1', offset: 1.5, targetDuration: null,
+    mode: 'pitch', preset: 'voice', gainDb: 0, fadeInMs: 8, fadeOutMs: 8, acceptOverlap: false });
+  assert.equal(st.blocks[0].duckDb, -9);
+  A.attachAudio('a.wav', { sampleRate: SR, channels: [sine(200, 30)] });
+  assert.equal(ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'a.wav', in: 20, out: 21, anchor: 'f1', offset: 5 } })).id, 'v8');
+  // fouten: onbekende versie, anker uit ander blok
+  assert.match(A.exec({ cmd: 'import_recipe', args: { recipe: { version: 3 } } }).error, /version 3 wordt niet ondersteund; verwacht 1 of 2/);
+  const bad = JSON.parse(JSON.stringify(v2)); bad.blocks[0].voice[0].anchor = 'f9';
+  assert.match(A.exec({ cmd: 'import_recipe', args: { recipe: bad } }).error, /anker "f9" is geen muziekfragment van blok b1; kies uit: f1/);
+});
+
+test('stem hangt aan zijn anker en schuift mee met de fit', () => {
+  const A = fresh();
+  A.attachAudio('m.wav', { sampleRate: SR, channels: [sine(220, 20)] });
+  A.attachAudio('v.wav', { sampleRate: SR, channels: [sine(330, 5)] });
+  ok(A.execAll([
+    { cmd: 'create_block', args: { name: 'B', targetDuration: 10 } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 5, snap: false } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 6, out: 12, snap: false } }
+  ]));
+  const add = ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 2, anchor: 'f2', offset: 0.5, snap: false } }));
+  let rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  const f2 = rep.fragments[1];
+  assert.equal(add.id, 'v1');
+  assert.ok(Math.abs(add.start - (f2.start + 0.5)) < 1e-9 && Math.abs(add.end - add.start - 2) < 1e-9);
+  assert.ok(Math.abs(rep.voice[0].start - (f2.start + 0.5)) < 1e-9);
+  // vorm van fit_report-uitbreiding
+  assert.equal(rep.fragments[0].start, 0);
+  assert.ok(Math.abs(rep.fragments[1].end - 10) < 1e-9);
+  assert.deepEqual(Object.keys(rep.transitions[0]).slice(0, 5), ['index', 'type', 'ms', 'start', 'end']);
+  assert.ok(Math.abs(rep.transitions[0].start - f2.start) < 1e-9 && Math.abs(rep.transitions[0].end - rep.fragments[0].end) < 1e-9);
+  assert.deepEqual(Object.keys(rep.voice[0]), ['id', 'anchor', 'start', 'end', 'sourceDuration', 'targetDuration', 'ratio', 'status']);
+  assert.equal(rep.voice[0].status, 'green');
+  assert.ok(Math.abs(rep.duck[0].start - (rep.voice[0].start - 0.15)) < 1e-9 && Math.abs(rep.duck[0].end - (rep.voice[0].end + 0.15)) < 1e-9);
+  assert.deepEqual(rep.overlaps, []);
+  // fit verandert → stem schuift mee
+  const before = rep.voice[0].start;
+  ok(A.exec({ cmd: 'update_block', args: { block: 'b1', targetDuration: 9 } }));
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.ok(rep.voice[0].start < before - 0.3);
+  assert.ok(Math.abs(rep.voice[0].start - (rep.fragments[1].start + 0.5)) < 1e-9);
+  // ook na herordenen (move_fragment) volgt de stem het anker
+  ok(A.exec({ cmd: 'move_fragment', args: { fragment: 'f2', position: 0 } }));
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.equal(rep.fragments[0].id, 'f2');
+  assert.ok(Math.abs(rep.voice[0].start - 0.5) < 1e-9);
+  // targetDuration: ratio en status, en een stem met targetDuration rendert op lengte
+  const u = ok(A.exec({ cmd: 'update_voice', args: { voice: 'v1', targetDuration: 1.6 } }));
+  assert.ok(Math.abs(u.end - u.start - 1.6) < 1e-9);
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.ok(Math.abs(rep.voice[0].ratio - 1.25) < 1e-12);
+  assert.equal(rep.voice[0].status, 'orange');
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v1', targetDuration: 1.2 } }));
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.ok(rep.warnings.some((w) => /stem v1: ratio 1\.667 — stem duidelijk hoorbaar versneld/.test(w)));
+  assert.equal(ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } })).samples, 9 * SR);
+  // helpende fouten
+  assert.match(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 1, anchor: 'f7' } }).error,
+    /anker "f7" is geen muziekfragment van blok "B" \(b1\); kies uit: f2, f1/);
+  assert.match(A.exec({ cmd: 'update_voice', args: { voice: 'v5', offset: 1 } }).error, /stem "v5" bestaat niet; bestaande stemfragmenten: v1 \(B\)/);
+  assert.match(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 1 } }).error, /argument 'anchor' ontbreekt/);
+  ok(A.exec({ cmd: 'delete_voice', args: { voice: 'v1' } }));
+  assert.deepEqual(ok(A.exec({ cmd: 'get_state' })).blocks[0].voice, []);
+});
+
+test('stem buiten het blok: fout met het aantal seconden te lang, geen render', () => {
+  const A = voiceSetup();
+  const r = ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 3, anchor: 'f2', offset: 1.5, snap: false } }));
+  assert.ok(Math.abs(r.end - 6.5) < 1e-9);
+  assert.match(r.warnings[0], /stem v1 is 2\.5 s te lang/);
+  const rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.equal(rep.exportable, false);
+  assert.ok(rep.warnings.some((w) => /stem v1 is 2\.5 s te lang voor blok "V" \(b1\): eindigt op 6\.5 s, het blok duurt 4\.0 s/.test(w)));
+  const rr = A.exec({ cmd: 'render_block', args: { block: 'b1' } });
+  assert.equal(rr.ok, false);
+  assert.match(rr.error, /2\.5 s te lang/);
+  assert.match(A.exec({ cmd: 'export_block', args: { block: 'b1' } }).error, /2\.5 s te lang/);
+  // vóór het begin van het blok
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v1', anchor: 'f1', offset: -0.25, out: 1 } }));
+  assert.match(A.exec({ cmd: 'render_block', args: { block: 'b1' } }).error, /stem v1 begint 0\.25 s vóór het begin van blok "V" \(b1\).*offset moet minstens 0\.0 zijn/);
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v1', offset: 0 } }));
+  assert.equal(ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } })).samples, 4 * SR);
+});
+
+test('overlappende stemmen: waarschuwing, render geblokkeerd tot acceptOverlap, daarna opgeteld', () => {
+  const A = voiceSetup({ music: 0 });
+  ok(A.exec({ cmd: 'update_block', args: { block: 'b1', duckDb: 0 } }));
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 1, anchor: 'f1', offset: 0.5, snap: false, fadeInMs: 0, fadeOutMs: 0 } }));
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 1, anchor: 'f1', offset: 1.25, snap: false, fadeInMs: 0, fadeOutMs: 0 } }));
+  let rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.equal(rep.exportable, true);
+  assert.equal(rep.overlaps.length, 1);
+  assert.equal(rep.overlaps[0].a, 'v1'); assert.equal(rep.overlaps[0].b, 'v2');
+  assert.ok(Math.abs(rep.overlaps[0].duration - 0.25) < 1e-9);
+  assert.equal(rep.overlaps[0].accepted, false);
+  assert.ok(rep.warnings.some((w) => /stemfragmenten v1 en v2 overlappen 0\.25 s/.test(w)));
+  const rr = A.exec({ cmd: 'render_block', args: { block: 'b1' } });
+  assert.equal(rr.ok, false);
+  assert.match(rr.error, /acceptOverlap/);
+  assert.match(A.exec({ cmd: 'export_block', args: { block: 'b1' } }).error, /acceptOverlap/);
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v2', acceptOverlap: true } }));
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.equal(rep.overlaps[0].accepted, true);
+  ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
+  const y = A.getRendered('b1').channels[0];
+  assert.ok(Math.abs(y[Math.round(0.8 * SR)] - 0.2) < 1e-6, 'alleen v1');
+  assert.ok(Math.abs(y[Math.round(1.375 * SR)] - 0.4) < 1e-6, 'v1 + v2 opgeteld');
+  assert.ok(Math.abs(y[Math.round(2.0 * SR)] - 0.2) < 1e-6, 'alleen v2');
+  // overlap wordt groter → acceptatie blijft, waarschuwing toont nieuwe duur
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v2', offset: 1.0 } }));
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.ok(Math.abs(rep.overlaps[0].duration - 0.5) < 1e-9 && rep.overlaps[0].accepted);
+  assert.ok(rep.warnings.some((w) => /overlappen 0\.5 s \(geaccepteerd/.test(w)));
+});
+
+test('ducking: niveau midden in de zone ≈ 10^(duckDb/20), cosinushellingen, zones samengevoegd', () => {
+  const A = voiceSetup();
+  ok(A.exec({ cmd: 'update_block', args: { block: 'b1', duckDb: -12, duckMs: 100 } }));
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'nul.wav', in: 0, out: 0.5, anchor: 'f1', offset: 0.5, snap: false } }));
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'nul.wav', in: 0, out: 0.5, anchor: 'f1', offset: 1.1, snap: false } }));
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'nul.wav', in: 0, out: 0.5, anchor: 'f2', offset: 1.0, snap: false } }));
+  const rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+  assert.equal(rep.duck.length, 2, JSON.stringify(rep.duck));
+  assert.ok(Math.abs(rep.duck[0].start - 0.4) < 1e-9 && Math.abs(rep.duck[0].end - 1.7) < 1e-9, 'v1+v2 samengevoegd');
+  assert.ok(Math.abs(rep.duck[1].start - 2.9) < 1e-9 && Math.abs(rep.duck[1].end - 3.6) < 1e-9);
+  ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
+  const y = A.getRendered('b1').channels[0], lvl = 10 ** (-12 / 20);
+  assert.ok(Math.abs(y[Math.round(0.75 * SR)] / 0.5 - lvl) < 1e-5, 'midden zone 1: ' + y[Math.round(0.75 * SR)] / 0.5);
+  assert.ok(Math.abs(y[Math.round(1.05 * SR)] / 0.5 - lvl) < 1e-5, 'tussen v1 en v2 blijft geduckt');
+  assert.ok(Math.abs(y[Math.round(3.25 * SR)] / 0.5 - lvl) < 1e-5, 'midden zone 2');
+  assert.ok(Math.abs(y[Math.round(0.45 * SR)] / 0.5 - (1 - (1 - lvl) * 0.5)) < 1e-4, 'halverwege de cosinushelling');
+  assert.ok(Math.abs(y[Math.round(0.3 * SR)] - 0.5) < 1e-6 && Math.abs(y[Math.round(2.5 * SR)] - 0.5) < 1e-6, 'buiten de zones onveranderd');
+  // duckDb 0 = uit; stem bij blokbegin: zone begrensd op 0
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v1', offset: 0 } }));
+  assert.equal(ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0].duck[0].start, 0);
+  ok(A.exec({ cmd: 'update_block', args: { block: 'b1', duckDb: 0 } }));
+  assert.deepEqual(ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0].duck, []);
+  ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
+  assert.ok(Math.abs(A.getRendered('b1').channels[0][Math.round(0.75 * SR)] - 0.5) < 1e-6);
+  assert.match(A.exec({ cmd: 'update_block', args: { block: 'b1', duckDb: 3 } }).error, /'duckDb' mag hoogstens 0 zijn/);
+});
+
+test('anker verwijderen of naar ander blok verplaatsen is geblokkeerd met de stem-ids', () => {
+  const A = voiceSetup();
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 1, anchor: 'f2', snap: false } }));
+  ok(A.exec({ cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 1, out: 1.5, anchor: 'f2', offset: 1.2, snap: false } }));
+  const r = A.exec({ cmd: 'delete_fragment', args: { fragment: 'f2' } });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /fragment f2 is het anker van stem v1, v2; verwijder eerst/);
+  ok(A.exec({ cmd: 'create_block', args: { name: 'Ander', targetDuration: 3 } }));
+  assert.match(A.exec({ cmd: 'move_fragment', args: { fragment: 'f2', position: 0, block: 'b2' } }).error, /anker van stem v1, v2/);
+  ok(A.exec({ cmd: 'delete_fragment', args: { fragment: 'f1' } }), 'geen anker: mag');
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v2', anchor: 'f2' } }));
+  ok(A.exec({ cmd: 'delete_voice', args: { voice: 'v1' } }));
+  ok(A.exec({ cmd: 'delete_voice', args: { voice: 'v2' } }));
+  ok(A.exec({ cmd: 'delete_fragment', args: { fragment: 'f2' } }));
+});
+
+test('move_fragment, duplicate_fragment en set_transition', () => {
+  const A = fresh();
+  A.attachAudio('s.wav', { sampleRate: SR, channels: [sine(300, 30)] });
+  ok(A.execAll([
+    { cmd: 'create_block', args: { name: 'A', targetDuration: 12 } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 0, out: 4, snap: false } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 5, out: 9, snap: false } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 10, out: 14, snap: false } },
+    { cmd: 'create_block', args: { name: 'B', targetDuration: 5 } }
+  ]));
+  assert.equal(ok(A.exec({ cmd: 'duplicate_fragment', args: { fragment: 'f2' } })).id, 'f4');
+  let st = ok(A.exec({ cmd: 'get_state' }));
+  assert.deepEqual(st.blocks[0].fragments.map((f) => f.id), ['f1', 'f2', 'f4', 'f3']);
+  assert.equal(st.blocks[0].fragments[2].in, 5);
+  assert.equal(st.blocks[0].transitions.length, 3);
+  ok(A.exec({ cmd: 'move_fragment', args: { fragment: 'f3', position: 0 } }));
+  ok(A.exec({ cmd: 'move_fragment', args: { fragment: 'f1', position: 0, block: 'b2' } }));
+  st = ok(A.exec({ cmd: 'get_state' }));
+  assert.deepEqual(st.blocks[0].fragments.map((f) => f.id), ['f3', 'f2', 'f4']);
+  assert.equal(st.blocks[0].transitions.length, 2);
+  assert.deepEqual(st.blocks[1].fragments.map((f) => f.id), ['f1']);
+  assert.equal(st.blocks[1].transitions.length, 0);
+  assert.match(A.exec({ cmd: 'move_fragment', args: { fragment: 'f2', position: 3 } }).error, /kies 0 t\/m 2/);
+  for (const [type, extra] of [['cut', {}], ['gap', { ms: 300 }], ['crossfade', { ms: 400, curve: 'linear' }], ['fade_out_a', { ms: 300 }],
+    ['fade_in_b', { ms: 300 }], ['duck', { ms: 600, duckDb: -18 }], ['mix', { ms: 200 }]]) {
+    const t = ok(A.exec({ cmd: 'set_transition', args: { block: 'b1', index: 1, type, ...extra } }));
+    assert.equal(t.type, type);
+    const rep = ok(A.exec({ cmd: 'fit_report', args: { block: 'b1' } }))[0];
+    assert.equal(rep.transitions[1].type, type);
+    assert.equal(ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } })).samples, 12 * SR, type);
+  }
+  assert.match(A.exec({ cmd: 'set_transition', args: { block: 'b1', index: 2, type: 'cut' } }).error, /overgangen 0 t\/m 1/);
+  assert.match(A.exec({ cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'gap', curve: 'linear' } }).error, /curve geldt alleen/);
+});
+
+test('renderBlockPure is sample-identiek aan render_block; voortgang oplopend tot 1', () => {
+  const A = fresh();
+  const n = 4 * SR, L = new Float32Array(n), R = new Float32Array(n);
+  for (let i = 0; i < n; i++) { L[i] = 0.3 * Math.sin(i * 0.031) + 0.1 * Math.sin(i * 0.0071); R[i] = 0.3 * Math.sin(i * 0.027); }
+  A.attachAudio('m.wav', { sampleRate: SR, channels: [L, R] });
+  A.attachAudio('v.wav', { sampleRate: SR, channels: [sine(180, 3, SR, 0.4)] });
+  ok(A.execAll([
+    { cmd: 'create_block', args: { name: 'P', targetDuration: 5 } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 3, snap: false } },
+    { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 1, out: 3.5, snap: false } },
+    { cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0.2, out: 2.2, anchor: 'f1', offset: 1, targetDuration: 1.8, snap: false } },
+    { cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0, out: 0.8, anchor: 'f2', offset: 0.3, snap: false } }
+  ]));
+  ok(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
+  const main = A.getRendered('b1');
+  const recipe = ok(A.exec({ cmd: 'get_state' }));
+  const audio = { 'm.wav': A.getAudio('m.wav'), 'v.wav': A.getAudio('v.wav') };
+  const calls = [];
+  const cache = new Map();
+  const pure = AF.renderBlockPure(recipe, audio, 'b1', { onProgress: (f, label) => calls.push([f, label]), cache });
+  assert.equal(pure.sampleRate, SR);
+  assert.deepEqual(Object.keys(pure), ['sampleRate', 'channels', 'stats', 'warnings']);
+  assert.deepEqual(Object.keys(pure.stats), ['duration', 'samples', 'peakDb', 'clipped']);
+  assert.equal(pure.stats.samples, 5 * SR);
+  assert.equal(pure.channels.length, main.channels.length);
+  for (let c = 0; c < main.channels.length; c++) {
+    assert.equal(pure.channels[c].length, main.channels[c].length);
+    assert.ok(pure.channels[c].every((x, i) => x === main.channels[c][i]), 'kanaal ' + c + ' sample-identiek');
+  }
+  assert.ok(calls.length > 10, 'aantal voortgangsmeldingen ' + calls.length);
+  for (let i = 1; i < calls.length; i++) assert.ok(calls[i][0] >= calls[i - 1][0], 'oplopend bij ' + i);
+  assert.equal(calls[calls.length - 1][0], 1);
+  assert.ok(calls.every(([f]) => f >= 0 && f <= 1));
+  const labels = new Set(calls.map((c) => c[1]));
+  for (const l of ['muziek 1/2 rekken', 'muziek 2/2 rekken', 'stem 1/2 rekken', 'stem 2/2 rekken', 'mixen']) assert.ok(labels.has(l), l);
+  // tweede aanroep met dezelfde cache: identiek en sneller (geen WSOLA)
+  assert.ok(cache.size >= 3);
+  const t = performance.now();
+  const again = AF.renderBlockPure(recipe, audio, 'b1', { cache });
+  assert.ok(performance.now() - t < 500);
+  assert.ok(again.channels[0].every((x, i) => x === pure.channels[0][i]));
+  // zelfde Nederlandse fouttekst als render_block
+  ok(A.exec({ cmd: 'update_voice', args: { voice: 'v2', anchor: 'f1', offset: 1.5 } }));
+  const err = A.exec({ cmd: 'render_block', args: { block: 'b1' } }).error;
+  assert.match(err, /acceptOverlap/);
+  assert.throws(() => AF.renderBlockPure(ok(A.exec({ cmd: 'get_state' })), audio, 'b1'), (e) => e instanceof Error && e.message === err);
+  assert.throws(() => AF.renderBlockPure(recipe, {}, 'b1'), /ontbrekende bron\(nen\) m\.wav, v\.wav/);
+  assert.throws(() => AF.renderBlockPure(recipe, audio, 'b9'), /blok "b9" bestaat niet; bestaande blokken: b1 \(P\)/);
 });
