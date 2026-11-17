@@ -1,7 +1,12 @@
 # Ontwerpplan: Audio Fit Tool
 
-Versie 0.6 — 17 november 2026
+Versie 0.7 — 17 november 2026
 Status: fase 1 gebouwd (v0.1.0). Geschreven als bouwinstructie voor een AI-codeassistent.
+
+Wijzigingen t.o.v. 0.6 (na gebruikerstest):
+- Nieuwe blokken standaard fit-modus `manual` ("origineel"): fragmenten op originele lengte; rekken alleen op verzoek (duurveld, randgreep, of "Pas blok in" = `proportional`).
+- Indeling blokgericht (§9): blokkenlijst links, actief blok groot in het midden, inspector rechts, bronnen in een inklapbare la onderin.
+- Verwijderen met Delete/Backspace en rechtsklikmenu in de tijdlijn; anker verwijderen vraagt wat er met de stem moet gebeuren.
 
 Wijzigingen t.o.v. 0.5:
 - Fase 5: voice-over-recorder met loopback-kalibratie van de latency (§6.11).
@@ -167,7 +172,8 @@ Editor-UI (DOM, canvas)            CLI (argumenten, bestanden)
 ### 6.5 Blokken en fit
 - Nieuw blok: naam + doelduur (seconden, 3 decimalen).
 - Fragmenten herordenen (slepen), dupliceren, verwijderen, "open in golfvorm".
-- **Fit-modus `proportional`** (standaard): alle niet-vergrendelde fragmenten krijgen dezelfde ratio.
+- **Fit-modus `manual`** (standaard voor nieuwe blokken, UI-naam "origineel"): zie hieronder.
+- **Fit-modus `proportional`** (UI-naam "passend maken"; knop "Pas blok in"): alle niet-vergrendelde fragmenten krijgen dezelfde ratio.
 
   ```
   T        = targetDuration
@@ -405,6 +411,14 @@ Werkwijze: in de editor bronnen laden, markers zetten, fragmenten knippen → re
 Verschil editor ↔ CLI: de berekening is dezelfde code. De uitvoer is sample-identiek wanneer de bronnen WAV zijn op de werkfrequentie. Bij MP3 of bij sample-rate-conversie decodeert de browser anders dan ffmpeg; de uitvoer is dan gelijkwaardig maar niet bit-identiek (HYPOTHESE: onhoorbaar verschil).
 
 ## 9. Schermindeling (editor)
+
+**Vanaf 0.7 blokgericht** (vervangt de schets hieronder):
+```
+┌ kop: titel · project │ Laden ↶ ↷ Recept AI ●Opname Export▾ ? ┐
+├ BLOKKEN │ ACTIEF BLOK: tijdlijn muziek/stem/ducking (groot) │ INSPECTOR ┤
+├ BRONNEN-la (inklapbaar): tabs per bron · golfvorm · markers · → muziek / → stem ┤
+```
+Oorspronkelijke schets (tot 0.6):
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
