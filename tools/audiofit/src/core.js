@@ -1802,7 +1802,7 @@ var AudioFit = (function () {
     check('2: 12,000 s in blok van 10,000 s → exact 10 × sampleRate samples', function () {
       var A = inst();
       A.attachAudio('st12.wav', { sampleRate: sr, channels: musicSignal(12, 2) });
-      must(A.execAll([{ cmd: 'create_block', args: { name: 'B10', targetDuration: 10 } },
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'B10', targetDuration: 10, fitMode: 'proportional' } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'st12.wav', 'in': 0, out: 12, snap: false } }]));
       var ex = must(A.exec({ cmd: 'export_block', args: { block: 'b1' } })).result;
       var dec = A.wav.decode(ex.files[0].bytes);
@@ -1813,7 +1813,7 @@ var AudioFit = (function () {
     function sineFit(mode) {
       var A = inst();
       A.attachAudio('sin440.wav', { sampleRate: sr, channels: [genSine(440, 3.6, sr, 0.8)] });
-      must(A.execAll([{ cmd: 'create_block', args: { name: 'S', targetDuration: 3.0 } },
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'S', targetDuration: 3.0, fitMode: 'proportional' } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'sin440.wav', 'in': 0, out: 3.6, snap: false, mode: mode } }]));
       var rep = must(A.exec({ cmd: 'fit_report', args: { block: 'b1' } })).result[0];
       must(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
@@ -1834,7 +1834,7 @@ var AudioFit = (function () {
     check('5: 3 fragmenten (17,0 s), 2 crossfades 0,5 s, blok 15 s → ratio 1,0625, exact 15,000 s', function () {
       var A = inst();
       A.attachAudio('m20.wav', { sampleRate: sr, channels: musicSignal(20, 5) });
-      must(A.execAll([{ cmd: 'create_block', args: { name: 'B15', targetDuration: 15 } },
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'B15', targetDuration: 15, fitMode: 'proportional' } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'm20.wav', 'in': 0, out: 6, snap: false } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'm20.wav', 'in': 6, out: 11.5, snap: false } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'm20.wav', 'in': 11.5, out: 17, snap: false } },
@@ -1866,7 +1866,7 @@ var AudioFit = (function () {
       function env(type, curve, first) {
         var srcA = first ? 'dc.wav' : 'nul.wav', srcB = first ? 'nul.wav' : 'dc.wav';
         var T = (type === 'cut') ? 2.0 : (type === 'gap' ? 2.3 : 2.0 - ovMs / 1000);
-        var cmds = [{ cmd: 'create_block', args: { name: 'E', targetDuration: T } },
+        var cmds = [{ cmd: 'create_block', args: { name: 'E', targetDuration: T, fitMode: 'proportional' } },
           { cmd: 'add_fragment', args: { block: 'E', source: srcA, 'in': 0, out: 1, snap: false } },
           { cmd: 'add_fragment', args: { block: 'E', source: srcB, 'in': 0, out: 1, snap: false } }];
         var ta = { block: 'E', index: 0, type: type };
@@ -1904,7 +1904,7 @@ var AudioFit = (function () {
       var A = inst();
       A.attachAudio('sin7.wav', { sampleRate: sr, channels: [genSine(440, 3, sr, 0.9)] });
       // bewust niet op nuldoorgangen (snap uit) zodat de microfades het werk doen
-      must(A.execAll([{ cmd: 'create_block', args: { name: 'C', targetDuration: 2.0 } },
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'C', targetDuration: 2.0, fitMode: 'proportional' } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'sin7.wav', 'in': 0.1003, out: 1.1003, snap: false } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'sin7.wav', 'in': 1.5517, out: 2.5517, snap: false } },
         { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } }]));
@@ -1922,7 +1922,7 @@ var AudioFit = (function () {
       var vsrc = new Float32Array(sr), spikeAt = Math.round(0.5 * sr);
       vsrc[spikeAt] = 0.25;
       A.attachAudio('stem.wav', { sampleRate: sr, channels: [vsrc] });
-      must(A.execAll([{ cmd: 'create_block', args: { name: 'V', targetDuration: 4.0 } },
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'V', targetDuration: 4.0, fitMode: 'proportional' } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'dc05.wav', 'in': 0, out: 2, snap: false } },
         { cmd: 'add_fragment', args: { block: 'b1', source: 'dc05.wav', 'in': 0, out: 2, snap: false } },
         { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } },

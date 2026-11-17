@@ -42,7 +42,7 @@ test('selftest (criteria 2–7 + stemcheck) is ok', () => {
 test('12 s → 10 s levert exact 10 × sampleRate samples', () => {
   const A = fresh();
   A.attachAudio('twaalf.wav', { sampleRate: SR, channels: [sine(220, 12), sine(330, 12)] });
-  const b = ok(A.exec({ cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 10 } }));
+  const b = ok(A.exec({ cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 10, fitMode: 'proportional' } }));
   ok(A.exec({ cmd: 'add_fragment', args: { block: b.id, source: 'twaalf.wav', in: 0, out: 12, snap: false } }));
   const rep = ok(A.exec({ cmd: 'fit_report', args: { block: b.id } }))[0];
   assert.ok(Math.abs(rep.fragments[0].ratio - 1.2) < 1e-12);
@@ -101,7 +101,7 @@ test('add_fragment met "@a"/"@b" levert het fragment tussen de markers', () => {
   ok(A.exec({ cmd: 'add_marker', args: { source: 'intro.wav', name: 'b', time: 3.5 } }));
   const auto = ok(A.exec({ cmd: 'add_marker', args: { source: 'intro.wav', time: 5 } }));
   assert.equal(auto.name, 'm1');
-  const b = ok(A.exec({ cmd: 'create_block', args: { name: 'X', targetDuration: 2.25 } }));
+  const b = ok(A.exec({ cmd: 'create_block', args: { name: 'X', targetDuration: 2.25, fitMode: 'proportional' } }));
   const f = ok(A.exec({ cmd: 'add_fragment', args: { block: b.id, source: 'intro.wav', in: '@a', out: '@b', snap: false } }));
   assert.equal(f.in, 1.25); assert.equal(f.out, 3.5); assert.equal(f.id, 'f1');
   // met snap: binnen ±5 ms van de marker, op een nuldoorgang
@@ -121,7 +121,7 @@ test('onbekende marker geeft de lijst bestaande markers', () => {
   A.attachAudio('intro.wav', { sampleRate: SR, channels: [sine(100, 8)] });
   ok(A.exec({ cmd: 'add_marker', args: { source: 'intro.wav', name: 'a', time: 1 } }));
   ok(A.exec({ cmd: 'add_marker', args: { source: 'intro.wav', name: 'b', time: 2 } }));
-  const b = ok(A.exec({ cmd: 'create_block', args: { targetDuration: 5 } }));
+  const b = ok(A.exec({ cmd: 'create_block', args: { targetDuration: 5, fitMode: 'proportional' } }));
   const r = A.exec({ cmd: 'add_fragment', args: { block: b.id, source: 'intro.wav', in: '@a', out: '@refrein' } });
   assert.equal(r.ok, false);
   assert.match(r.error, /@refrein/);
@@ -143,7 +143,7 @@ test('execAll: rollback bij fout en het geheel is één undo-stap', () => {
   const unsub = A.subscribe(() => { calls++; });
   const before = JSON.stringify(ok(A.exec({ cmd: 'get_state' })));
   const bad = A.execAll([
-    { cmd: 'create_block', args: { name: 'B', targetDuration: 5 } },
+    { cmd: 'create_block', args: { name: 'B', targetDuration: 5, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'a.wav', in: 0, out: 3 } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'a.wav', in: 4, out: 99 } }
   ]);
@@ -156,7 +156,7 @@ test('execAll: rollback bij fout en het geheel is één undo-stap', () => {
   assert.equal(A.history().undo, 0);
 
   const good = A.execAll([
-    { cmd: 'create_block', args: { name: 'B', targetDuration: 5 } },
+    { cmd: 'create_block', args: { name: 'B', targetDuration: 5, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'B', source: 'a.wav', in: 0, out: 3, snap: false } },
     { cmd: 'add_fragment', args: { block: 'B', source: 'a.wav', in: 4, out: 7, snap: false } },
     { cmd: 'set_transition', args: { block: 'B', index: 0, type: 'gap', ms: 250 } },
@@ -237,7 +237,7 @@ test('fit-voorbeeld criterium 5: ratio 1.0625 voor alle drie, export exact 15,00
   for (let i = 0; i < n; i++) x[i] = 0.3 * Math.sin(2 * Math.PI * 220 * i / SR) + 0.2 * Math.sin(2 * Math.PI * 331 * i / SR);
   A.attachAudio('muziek.wav', { sampleRate: SR, channels: [x] });
   const r = A.execAll([
-    { cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 15 } },
+    { cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 15, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'muziek.wav', in: 0, out: 5, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'muziek.wav', in: 5, out: 11, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'muziek.wav', in: 12, out: 18, snap: false } },
@@ -262,7 +262,7 @@ test('fit-regels: vergrendeld, overlapgrens 90%, noemer ≤ 0, manual', () => {
   const A = fresh();
   A.attachAudio('s.wav', { sampleRate: SR, channels: [sine(300, 30)] });
   ok(A.execAll([
-    { cmd: 'create_block', args: { name: 'L', targetDuration: 10 } },
+    { cmd: 'create_block', args: { name: 'L', targetDuration: 10, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 0, out: 4, snap: false, locked: true } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 4, out: 10, snap: false } },
     { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } }
@@ -294,6 +294,34 @@ test('fit-regels: vergrendeld, overlapgrens 90%, noemer ≤ 0, manual', () => {
   const r2 = A.exec({ cmd: 'export_block', args: { block: 'b1' } });
   assert.equal(r2.ok, false);
   assert.match(r2.error, /te lang/);
+});
+
+test('create_block zonder fitMode: manual, fragment op originele lengte (te kort); recept zonder fitMode blijft proportional', () => {
+  const A = fresh();
+  A.attachAudio('o.wav', { sampleRate: SR, channels: [sine(300, 20)] });
+  const b = ok(A.exec({ cmd: 'create_block', args: { name: 'N', targetDuration: 10 } }));
+  assert.equal(ok(A.exec({ cmd: 'get_state' })).blocks[0].fitMode, 'manual');
+  ok(A.exec({ cmd: 'add_fragment', args: { block: b.id, source: 'o.wav', in: 0, out: 6, snap: false } }));
+  let rep = ok(A.exec({ cmd: 'fit_report', args: { block: b.id } }))[0];
+  assert.equal(rep.fragments[0].ratio, 1);
+  assert.ok(Math.abs(rep.fragments[0].targetDuration - 6) < 1e-12);
+  assert.ok(Math.abs(rep.deviation + 4) < 1e-9, 'blok 4 s te kort');
+  assert.equal(rep.exportable, true);
+  const r = ok(A.exec({ cmd: 'render_block', args: { block: b.id } }));
+  assert.equal(r.samples, 10 * SR);
+  const ch = A.getRendered(b.id).channels[0];
+  let tail = 0; for (let i = 7 * SR; i < 10 * SR; i++) tail = Math.max(tail, Math.abs(ch[i]));
+  assert.equal(tail, 0, 'stilte aan het eind');
+  // "Pas blok in" = fitMode proportional → vult exact
+  ok(A.exec({ cmd: 'update_block', args: { block: b.id, fitMode: 'proportional' } }));
+  rep = ok(A.exec({ cmd: 'fit_report', args: { block: b.id } }))[0];
+  assert.ok(Math.abs(rep.fragments[0].ratio - 0.6) < 1e-12);
+  assert.ok(Math.abs(rep.deviation) < 1e-9);
+  // import zonder fitMode → proportional (bestaande recepten veranderen niet)
+  const B = fresh();
+  ok(B.exec({ cmd: 'import_recipe', args: { recipe: { version: 2, sampleRate: SR, sources: [],
+    blocks: [{ id: 'b1', name: 'X', targetDuration: 5, fragments: [], transitions: [], voice: [] }] } } }));
+  assert.equal(ok(B.exec({ cmd: 'get_state' })).blocks[0].fitMode, 'proportional');
 });
 
 test('import_recipe, ids doorlopen, attachAudio met hernoemen en resamplen', () => {
@@ -354,7 +382,7 @@ function voiceSetup({ T = 4, music = 0.5 } = {}) {
   A.attachAudio('v.wav', { sampleRate: SR, channels: [dc(0.2, 3)] });
   A.attachAudio('nul.wav', { sampleRate: SR, channels: [dc(0, 3)] });
   ok(A.execAll([
-    { cmd: 'create_block', args: { name: 'V', targetDuration: T } },
+    { cmd: 'create_block', args: { name: 'V', targetDuration: T, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 2, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 2, snap: false } },
     { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } }
@@ -395,7 +423,7 @@ test('stem hangt aan zijn anker en schuift mee met de fit', () => {
   A.attachAudio('m.wav', { sampleRate: SR, channels: [sine(220, 20)] });
   A.attachAudio('v.wav', { sampleRate: SR, channels: [sine(330, 5)] });
   ok(A.execAll([
-    { cmd: 'create_block', args: { name: 'B', targetDuration: 10 } },
+    { cmd: 'create_block', args: { name: 'B', targetDuration: 10, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 5, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 6, out: 12, snap: false } }
   ]));
@@ -528,7 +556,7 @@ test('anker verwijderen of naar ander blok verplaatsen is geblokkeerd met de ste
   const r = A.exec({ cmd: 'delete_fragment', args: { fragment: 'f2' } });
   assert.equal(r.ok, false);
   assert.match(r.error, /fragment f2 is het anker van stem v1, v2; verwijder eerst/);
-  ok(A.exec({ cmd: 'create_block', args: { name: 'Ander', targetDuration: 3 } }));
+  ok(A.exec({ cmd: 'create_block', args: { name: 'Ander', targetDuration: 3, fitMode: 'proportional' } }));
   assert.match(A.exec({ cmd: 'move_fragment', args: { fragment: 'f2', position: 0, block: 'b2' } }).error, /anker van stem v1, v2/);
   ok(A.exec({ cmd: 'delete_fragment', args: { fragment: 'f1' } }), 'geen anker: mag');
   ok(A.exec({ cmd: 'update_voice', args: { voice: 'v2', anchor: 'f2' } }));
@@ -541,11 +569,11 @@ test('move_fragment, duplicate_fragment en set_transition', () => {
   const A = fresh();
   A.attachAudio('s.wav', { sampleRate: SR, channels: [sine(300, 30)] });
   ok(A.execAll([
-    { cmd: 'create_block', args: { name: 'A', targetDuration: 12 } },
+    { cmd: 'create_block', args: { name: 'A', targetDuration: 12, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 0, out: 4, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 5, out: 9, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 's.wav', in: 10, out: 14, snap: false } },
-    { cmd: 'create_block', args: { name: 'B', targetDuration: 5 } }
+    { cmd: 'create_block', args: { name: 'B', targetDuration: 5, fitMode: 'proportional' } }
   ]));
   assert.equal(ok(A.exec({ cmd: 'duplicate_fragment', args: { fragment: 'f2' } })).id, 'f4');
   let st = ok(A.exec({ cmd: 'get_state' }));
@@ -579,7 +607,7 @@ test('renderBlockPure is sample-identiek aan render_block; voortgang oplopend to
   A.attachAudio('m.wav', { sampleRate: SR, channels: [L, R] });
   A.attachAudio('v.wav', { sampleRate: SR, channels: [sine(180, 3, SR, 0.4)] });
   ok(A.execAll([
-    { cmd: 'create_block', args: { name: 'P', targetDuration: 5 } },
+    { cmd: 'create_block', args: { name: 'P', targetDuration: 5, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 0, out: 3, snap: false } },
     { cmd: 'add_fragment', args: { block: 'b1', source: 'm.wav', in: 1, out: 3.5, snap: false } },
     { cmd: 'add_voice', args: { block: 'b1', source: 'v.wav', in: 0.2, out: 2.2, anchor: 'f1', offset: 1, targetDuration: 1.8, snap: false } },

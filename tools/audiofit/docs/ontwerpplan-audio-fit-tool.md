@@ -186,7 +186,10 @@ Editor-UI (DOM, canvas)            CLI (argumenten, bestanden)
   doeldur_i = brondur_i              (vergrendeld)
   ```
   Overlap- en gap-duren gelden in uitvoertijd en schalen niet mee. Noemer ≤ 0 → foutmelding, geen render.
-- **Fit-modus `manual`**: eigen doelduur per fragment; het blok toont het verschil. Te kort → stilte aan het eind; te lang → export geblokkeerd.
+- **Fit-modus `manual`**: eigen doelduur per fragment (`manualDuration`; `null` = originele lengte); het blok toont het verschil. Te kort → stilte aan het eind (tijdlijn: gearceerd); te lang → export geblokkeerd (tijdlijn: rode zone voorbij de doelduur).
+- Standaarden (kern 0.3.0): `create_block` zonder `fitMode` → `manual`; `import_recipe` vult een ontbrekende `fitMode` aan met `proportional`, zodat bestaande recepten hetzelfde blijven klinken.
+- Editor: duur instellen met de randgreep rechts op een muziekfragment (klikt vast op "origineel" en "blok precies vol"; ratio-kleur live; niet op vergrendelde fragmenten) of het duurveld in de inspector (leeg = origineel). Staat het blok op `proportional`, dan schakelt de editor in dezelfde undo-stap naar `manual` en krijgen de andere niet-vergrendelde fragmenten hun huidige gerekte duur als `manualDuration`, zodat niets verspringt (melding in de statusbalk). Terug van `proportional` naar `manual` herstelt de eerder ingestelde `manualDuration`-waarden (`proportional` gebruikt en wijzigt ze niet).
+- Muziekfragment verwijderen dat anker van een stem is: dialoog "Stem … hangt aan dit fragment: [Stem ook verwijderen] [Aan ander fragment hangen] [Annuleren]", uitgevoerd met `execAll` (één undo-stap). Bij verhangen houdt de stem zijn huidige plek t.o.v. het nieuwe anker.
 - **Ratio-indicatie** per fragment (modus `pitch`):
 
   | Ratio | Indicatie |
@@ -232,7 +235,7 @@ Regels:
 - Recept opslaan/laden als `.json`.
 
 ### 6.9 Sneltoetsen
-`Spatie` play/stop · `I`/`O` in/uit op cursor · `M` marker · `L` loop · `Enter` selectie → actief blok · `Ctrl+Z`/`Ctrl+Y` undo/redo.
+`Spatie` play/stop (actief blok als de focus in blok/tijdlijn/inspector ligt, bron als de focus in de bronnen-la ligt) · `Delete`/`Backspace` geselecteerd fragment of stem verwijderen, overgang terug naar `cut` · `Esc` selectie opheffen · `I`/`O` in/uit op cursor · `M` marker · `L` loop · `Enter` selectie → muziekfragment aan het eind van het actieve blok (originele lengte; zonder blok eerst dialoog naam+duur) · `Shift+Enter` selectie → stem op de cursor van de bloktijdlijn · `Ctrl+scroll` zoom · rechtsklik menu · dubbelklik open in bron · `Ctrl+Z`/`Ctrl+Y` undo/redo.
 
 ### 6.10 Stemspoor (voice-over)
 

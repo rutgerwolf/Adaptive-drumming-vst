@@ -49,7 +49,7 @@ function buildRecipe(cmds, sources) {
   return { recipe: A.exec({ cmd: 'get_state' }).result, core: A };
 }
 const baseCmds = [
-  { cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 10 } },
+  { cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 10, fitMode: 'proportional' } },
   { cmd: 'add_marker', args: { source: 'a.wav', name: 'start', time: 1 } },
   { cmd: 'add_fragment', args: { block: 'b1', source: 'a.wav', in: '@start', out: 13, snap: false } }
 ];
@@ -105,7 +105,7 @@ test('validate: fout recept (onbekend blok-veld/kapotte structuur) en kapotte JS
 
 test('exec: marker-verwijzing, overschrijven met .bak.json', () => {
   const d = tmp();
-  const { recipe } = buildRecipe([{ cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 10 } },
+  const { recipe } = buildRecipe([{ cmd: 'create_block', args: { name: 'Blok 1', targetDuration: 10, fitMode: 'proportional' } },
     { cmd: 'add_marker', args: { source: 'a.wav', name: 'start', time: 1 } }], [['a.wav', 20, 220]]);
   const p = join(d, 'recept.json');
   const origText = JSON.stringify(recipe);
@@ -123,7 +123,7 @@ test('exec: marker-verwijzing, overschrijven met .bak.json', () => {
 
 test('exec: --commands bestand met --out laat origineel intact; fout = niets geschreven', () => {
   const d = tmp();
-  const { recipe } = buildRecipe([{ cmd: 'create_block', args: { name: 'B', targetDuration: 5 } }], [['a.wav', 20, 220]]);
+  const { recipe } = buildRecipe([{ cmd: 'create_block', args: { name: 'B', targetDuration: 5, fitMode: 'proportional' } }], [['a.wav', 20, 220]]);
   const p = join(d, 'recept.json');
   writeFileSync(p, JSON.stringify(recipe));
   writeFileSync(join(d, 'c.json'), JSON.stringify([{ cmd: 'update_block', args: { block: 'b1', targetDuration: 7 } }]));
@@ -183,7 +183,7 @@ test('render: WAV-bronnen, exacte lengte en sample-identiek aan export uit de ke
 
 test('render: --block en --normalize', () => {
   const d = tmp(), out = join(d, 'uit');
-  const { recipe } = buildRecipe(baseCmds.concat([{ cmd: 'create_block', args: { name: 'Tweede', targetDuration: 4 } },
+  const { recipe } = buildRecipe(baseCmds.concat([{ cmd: 'create_block', args: { name: 'Tweede', targetDuration: 4, fitMode: 'proportional' } },
     { cmd: 'add_fragment', args: { block: 'b2', source: 'a.wav', in: 0, out: 6, snap: false } }]), [['a.wav', 20, 220]]);
   writeFileSync(join(d, 'r.json'), JSON.stringify(recipe));
   writeWav(d, 'a.wav', 20);

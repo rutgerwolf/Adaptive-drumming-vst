@@ -82,3 +82,11 @@ Blokken `b1, b2, …`, fragmenten `f1, f2, …` (oplopend, nooit hergebruikt bin
 ## Worker (editor-zijde)
 - Editor maakt de Worker uit een `Blob` met `document.getElementById('audiofit-core').textContent` + een klein worker-script. Protocol: `{type:'audio', name, sampleRate, channels}` (eenmalig per bron, transfer van kopieën), `{type:'render', jobId, recipe, blockId}` → `{type:'progress', jobId, fraction, label}` … `{type:'done', jobId, sampleRate, channels, stats, warnings}` of `{type:'error', jobId, message}`. Annuleren: editor beëindigt de Worker (`terminate`) en start een nieuwe (bronnen opnieuw sturen).
 - Fallback als Worker niet kan (bijv. file:// beperking): renderen in de hoofdthread met `renderBlockPure` en `onProgress` via `await`-pauzes; voortgang blijft zichtbaar.
+
+---
+
+# Aanvulling kern 0.3.0 (ontwerp v0.7)
+- `create_block` zonder `fitMode` → `"manual"` (constante `CONSTANTS.DEFAULT_FIT_MODE_NEW_BLOCK`). In `manual` betekent `manualDuration: null` de originele lengte, dus een nieuw fragment wordt niet gerekt.
+- `import_recipe` zonder `fitMode` per blok → `"proportional"` (ongewijzigd), zodat bestaande recepten hetzelfde blijven.
+- Wie een exact gevuld blok wil, geeft `fitMode: "proportional"` mee (of `update_block`), of zet `manualDuration` per fragment.
+- `AudioFit.version` = `"0.3.0"`.

@@ -12,13 +12,16 @@ Alle uitleg staat in de tool zelf onder **?** (help): werkwijze, sneltoetsen, vo
 
 ### In het kort
 
-1. **Laden** (of slepen): muziek en voice-over.
+Het blok (het eindproduct) staat in het midden; links de blokkenlijst, rechts de inspector, onderin de bronnen-la.
+
+1. **Laden** (of slepen): muziek en voice-over; elke bron krijgt een tabblad in de la.
 2. Selecteren in de golfvorm, markers met `M`.
-3. **+ nieuw blok** met doelduur.
-4. `Enter` = selectie als muziekfragment; `Shift+Enter` = als stemfragment (hangt aan een muziekfragment).
-5. Overgangen, ducking en per-fragment instellingen in de bloktijdlijn.
-6. **● Opname**: spreek voice-over in terwijl het blok in je koptelefoon speelt; eerst één keer **Kalibreer** (koptelefoon tegen de microfoon). Download elke opname als WAV.
-7. **Voorbeluister** en **WAV**. Bewaar je werk met **Recept ⇅** (JSON; audio zelf blijft in je eigen bestanden).
+3. **+ blok** met naam en doelduur.
+4. `Enter` = selectie als muziekfragment op zijn **originele lengte** (het blok toont of het te kort of te lang is); `Shift+Enter` = als stemfragment op de cursor van de tijdlijn.
+5. Rekken doe je zelf: randgreep rechts op een fragment, duurveld in de inspector, of **Pas blok in** (alles gelijk gerekt tot het blok vol is).
+6. Klik selecteert, `Delete` verwijdert, rechtsklik geeft een menu; overgangen, ducking en instellingen in de inspector.
+7. **● Opname**: spreek voice-over in terwijl het blok in je koptelefoon speelt; eerst één keer **Kalibreer** (koptelefoon tegen de microfoon). Download elke opname als WAV.
+8. **▶ Blok** (of Spatie) en **Export ▾**. Bewaar je werk met **Recept ⇅** (JSON; audio zelf blijft in je eigen bestanden).
 
 ## Vereisten
 
@@ -63,6 +66,7 @@ Overige opdrachten: `schema`, `validate`, `probe`, `selftest`, `help`.
 | 3 | Recept opslaan/laden, AI-aansturing via chat, help, zelftest, normaliseren | gereed |
 | 4 | CLI voor Claude Code | gereed |
 | 5 | Voice-over opnemen tijdens afspelen, latency-kalibratie | gereed (niet getest met echte microfoon) |
+| — | Indeling rond het blok; nieuw blok standaard "origineel" (kern 0.3.0) | gereed |
 
 ## Bekende beperkingen
 
