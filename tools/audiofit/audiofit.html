@@ -25,7 +25,7 @@ header h1{font-size:15px;margin:0 10px 0 0;font-weight:600}
 header h1 small{color:var(--dim);font-weight:400;margin-left:6px}
 header .sp{flex:1}
 main{flex:1;min-height:0;display:flex;flex-direction:column}
-.top{flex:1 1 55%;min-height:260px;display:grid;grid-template-columns:190px 1fr 220px;border-bottom:1px solid var(--line)}
+.top{flex:1 1 40%;min-height:230px;display:grid;grid-template-columns:190px 1fr 220px;border-bottom:1px solid var(--line)}
 .side{background:var(--panel);overflow:auto;padding:6px}
 .side h2,.blocks h2{font-size:11px;letter-spacing:.08em;color:var(--dim);margin:2px 2px 6px;text-transform:uppercase}
 .side.left{border-right:1px solid var(--line)}
@@ -54,7 +54,7 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
 .mrow button{padding:0 5px;font-size:11px}
 .between{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);display:grid;gap:4px}
 .between select{width:100%}
-.blocks{flex:1 1 45%;min-height:140px;overflow:auto;background:var(--bg);padding:6px 10px}
+.blocks{flex:1 1 60%;min-height:200px;overflow:auto;background:var(--bg);padding:6px 10px}
 .blocks .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .blk{background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-bottom:8px;padding:6px 8px}
 .blk.active{border-color:var(--accent)}
@@ -66,7 +66,7 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
 .orange{background:rgba(227,160,8,.18);color:var(--orange);border-color:var(--orange)}
 .red{background:rgba(229,83,75,.18);color:var(--red);border-color:var(--red)}
 .blocked{background:rgba(142,68,173,.25);color:#c58be0;border-color:var(--blocked)}
-.seg{display:flex;height:22px;margin:6px 0;gap:2px}
+.seg{display:none}
 .seg div{background:var(--accent2);border-radius:3px;overflow:hidden;white-space:nowrap;font-size:11px;padding:3px 5px;min-width:6px;border-bottom:3px solid transparent}
 .seg div{color:#fff!important}
 .seg div.green{border-bottom-color:var(--green)}.seg div.orange{border-bottom-color:var(--orange)}
@@ -87,6 +87,63 @@ footer{flex:none;background:var(--panel);border-top:1px solid var(--line);paddin
 #ctx div{padding:5px 12px;cursor:pointer}#ctx div:hover{background:var(--accent2)}
 #mname{position:absolute;display:none;z-index:20;width:120px}
 .dim{color:var(--dim)}
+.tl{position:relative;margin:6px 0;user-select:none}
+.tl .ruler{position:relative;height:14px;color:var(--dim);font-size:10px}
+.tl .ruler span{position:absolute;top:0;border-left:1px solid var(--line);padding-left:3px;height:14px;white-space:nowrap}
+.tl .row{position:relative;height:40px;background:#12161c;border:1px solid var(--line);border-radius:4px;margin-top:2px;overflow:hidden}
+.tl + .row,.row.voice{height:32px}
+.tl .hint{position:absolute;inset:0;display:flex;align-items:center;padding-left:8px;color:var(--dim);font-size:11px}
+.endline{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--red);z-index:6;pointer-events:none}
+.tfr{position:absolute;top:3px;bottom:3px;background:var(--accent2);border-radius:3px;overflow:hidden;white-space:nowrap;font-size:11px;padding:3px 5px;border-bottom:3px solid transparent;color:#fff;cursor:grab;z-index:1}
+.tfr.green{border-bottom-color:var(--green)}.tfr.orange{border-bottom-color:var(--orange)}.tfr.red{border-bottom-color:var(--red)}.tfr.blocked{border-bottom-color:var(--blocked)}
+.tfr.sel,.tvo.sel{outline:2px solid #fff;outline-offset:-1px}
+.tfr.miss{background:#6b5a1f}
+.tfr.anc{outline:2px dashed var(--marker);outline-offset:-2px}
+.tfr.dragging,.tvo.dragging{opacity:.8;z-index:8;cursor:grabbing}
+.tfr .rt,.tvo .rt{opacity:.75;margin-left:6px;font-size:10px}
+.tz{position:absolute;top:0;bottom:0;z-index:4;cursor:pointer;font-size:9px;color:#fff;overflow:visible;white-space:nowrap}
+.tz span{position:absolute;left:2px;top:1px;pointer-events:none;text-shadow:0 0 2px #000}
+.tz.ov{background:repeating-linear-gradient(45deg,rgba(255,255,255,.6) 0 3px,rgba(255,255,255,.15) 3px 6px);border-left:1px solid #fff;border-right:1px solid #fff}
+.tz.ov.duck{background:repeating-linear-gradient(45deg,rgba(255,183,77,.8) 0 3px,rgba(255,255,255,.15) 3px 6px)}
+.tz.ov.mix{background:repeating-linear-gradient(45deg,rgba(229,83,75,.7) 0 3px,rgba(255,255,255,.15) 3px 6px)}
+.tz.gap{background:rgba(0,0,0,.65);border:1px dashed var(--dim)}
+.tz.cut::before{content:"";position:absolute;left:4px;top:0;bottom:0;width:2px;background:#fff;opacity:.85}
+.tz .h{position:absolute;top:0;bottom:0;width:7px;cursor:ew-resize;z-index:2}
+.tz .h.l{left:-4px}.tz .h.r{right:-4px}
+.tz .h:hover{background:rgba(78,161,255,.7)}
+.tz.sel{box-shadow:0 0 0 2px #ffd54f}
+.duckz{position:absolute;top:0;bottom:0;z-index:3;pointer-events:none;background:repeating-linear-gradient(-45deg,rgba(255,183,77,.30) 0 4px,rgba(255,183,77,.08) 4px 8px);border-bottom:3px solid var(--marker)}
+.dropline{position:absolute;top:0;bottom:0;width:0;border-left:3px solid #ffd54f;z-index:9;pointer-events:none}
+.tlcur{position:absolute;top:0;bottom:0;width:0;border-left:2px solid var(--cursor);z-index:10;display:none;pointer-events:none}
+.tvo{position:absolute;top:5px;bottom:5px;background:#7b4fa8;border-radius:3px;overflow:hidden;white-space:nowrap;font-size:11px;padding:3px 5px;color:#fff;cursor:grab;z-index:2;border-bottom:3px solid transparent}
+.tvo.green{border-bottom-color:var(--green)}.tvo.orange{border-bottom-color:var(--orange)}.tvo.red{border-bottom-color:var(--red)}.tvo.blocked{border-bottom-color:var(--blocked)}
+.tvo.ovl{box-shadow:0 0 0 2px var(--red)}
+.ancl{position:absolute;top:2px;height:0;border-top:1px dashed var(--marker);z-index:1;pointer-events:none}
+.ancl b{position:absolute;left:0;top:-4px;width:7px;height:7px;border-radius:50%;background:var(--marker)}
+table.fr td.grip{cursor:grab;color:var(--dim);width:16px;text-align:center}
+table.fr tr{cursor:pointer}
+table.fr tr.sel td{background:rgba(78,161,255,.14)}
+table.fr tr.dropb td{border-top:2px solid #ffd54f}table.fr tr.dropa td{border-bottom:2px solid #ffd54f}
+table.vt{margin-top:6px}
+.detail{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:6px 8px;margin-top:6px}
+.detail .drow{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin-top:5px}
+.detail .df{display:flex;align-items:center;gap:4px;color:var(--dim)}
+.detail .df input[type=text]{text-align:right}
+.warnbox,.errbox{margin:4px 0;padding:3px 8px;border-radius:4px;font-size:12px;border:1px solid var(--orange);background:rgba(227,160,8,.14);color:var(--orange)}
+.errbox{border-color:var(--red);background:rgba(229,83,75,.14);color:var(--red)}
+.errbox .x{float:right;padding:0 6px}
+.wlist{margin:3px 0;font-size:11px;color:var(--orange)}
+.rprog{align-items:center;gap:8px;margin:3px 0;font-size:12px}
+.rprog .bar,.sprog .bar{width:160px;height:8px;background:var(--line);border-radius:4px;overflow:hidden;flex:none}
+.rprog .bar i,.sprog .bar i{display:block;height:100%;width:0;background:var(--accent)}
+.rprog .pct,.sprog .pct{width:36px;text-align:right;font-variant-numeric:tabular-nums}
+.rprog .lab,.sprog .lab{color:var(--dim);white-space:nowrap}
+.sprog{display:none;align-items:center;gap:8px;font-size:12px;flex:none}
+button.busy{color:var(--accent)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;align-items:center;justify-content:center}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 20px;max-width:520px}
+.modal h3{margin:0 0 8px;font-size:15px}.modal p{margin:0 0 14px;color:var(--dim)}
+.modal .btns{display:flex;gap:8px;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -97,7 +154,7 @@ footer{flex:none;background:var(--panel);border-top:1px solid var(--line);paddin
   <button id="btnUndo" title="Ongedaan maken (Ctrl+Z)">&#8630;</button>
   <button id="btnRedo" title="Opnieuw (Ctrl+Y)">&#8631;</button>
   <span class="sp"></span>
-  <span class="dim" id="hint">Spatie afspelen &middot; I/O in/uit &middot; M marker &middot; L loop &middot; Enter selectie &rarr; blok</span>
+  <span class="dim" id="hint">Spatie afspelen &middot; I/O in/uit &middot; M marker &middot; L loop &middot; Enter selectie &rarr; blok &middot; Shift+Enter &rarr; stem</span>
 </header>
 <main>
   <div class="top">
@@ -124,6 +181,9 @@ footer{flex:none;background:var(--panel);border-top:1px solid var(--line);paddin
         <label class="chk"><input type="checkbox" id="chkSnap" checked> snap nuldoorgang</label>
         <button id="btnMarker">M marker</button>
         <button id="btnToBlock">&rarr; blok (Enter)</button>
+        <button id="btnToVoice" title="Selectie als stemfragment in het actieve blok (Shift+Enter)">&rarr; stem (Shift+Enter)</button>
+        <label>anker</label><select id="vAnchor" title="Muziekfragment waaraan de stem hangt"></select>
+        <label>offset</label><input class="tf" type="text" id="vOffset" value="0.000" style="width:64px" title="Seconden na het begin van het anker"><span class="dim">s</span>
         <button id="btnFit">Hele bron</button>
       </div>
     </div>
@@ -148,9 +208,11 @@ footer{flex:none;background:var(--panel);border-top:1px solid var(--line);paddin
 </main>
 <footer>
   <div id="log"></div>
+  <div class="sprog" id="sprog"><div class="bar"><i></i></div><span class="pct"></span><span class="lab"></span></div>
   <div id="status" title="Klik voor het logboek">Klaar.</div>
 </footer>
 <div id="ctx"></div>
+<div class="modal" id="modal"><div class="box"><h3></h3><p></p><div class="btns"></div></div></div>
 
 <script id="audiofit-core">
 var AudioFit = (function () {
@@ -998,6 +1060,290 @@ var AudioFit = (function () {
   }
 
   /* =====================================================================
+   * Opzoeken (puur, op een recept)
+   * ===================================================================== */
+  function findBlock(recipe, ref) {
+    for (var i = 0; i < recipe.blocks.length; i++) if (recipe.blocks[i].id === ref) return recipe.blocks[i];
+    var byName = recipe.blocks.filter(function (b) { return b.name === ref; });
+    if (byName.length === 1) return byName[0];
+    var list = recipe.blocks.map(function (b) { return b.id + ' (' + b.name + ')'; });
+    fail('blok ' + q(ref) + ' bestaat niet; ' + (list.length ? 'bestaande blokken: ' + list.join(', ') : 'er zijn nog geen blokken; maak er een met create_block'));
+  }
+
+  /* =====================================================================
+   * Renderer — blok samenstellen (§7.3) + stemspoor en ducking (§6.10).
+   * Puur: werkt op (recept, audio, blok, {cache, onProgress}) zonder interne
+   * state. Gebruikt door render_block (hoofdthread) én renderBlockPure (achtergrondthread),
+   * zodat beide sample-identiek zijn.
+   * ===================================================================== */
+  var Renderer = (function () {
+    function fadeInGain(g, len) { for (var k = 0; k < len; k++) g[k] *= 0.5 - 0.5 * Math.cos(Math.PI * k / len); }
+    function fadeOutGain(g, n, len) { for (var k = 0; k < len; k++) g[n - len + k] *= 0.5 + 0.5 * Math.cos(Math.PI * (k + 1) / len); }
+    function curveIn(g, len, curve) {
+      for (var k = 0; k < len; k++) { var x = k / len; g[k] *= curve === 'linear' ? x : Math.sin(x * Math.PI / 2); }
+    }
+    function curveOut(g, n, len, curve) {
+      for (var k = 0; k < len; k++) { var x = k / len; g[n - len + k] *= curve === 'linear' ? 1 - x : Math.cos(x * Math.PI / 2); }
+    }
+    function duckOut(g, n, len, level, ramp) {
+      for (var k = 0; k < len; k++) {
+        var v;
+        if (k < ramp) v = 1 - (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * k / ramp));
+        else if (k < len - ramp) v = level;
+        else { var kk = k - (len - ramp); v = level * (0.5 + 0.5 * Math.cos(Math.PI * (kk + 1) / ramp)); }
+        g[n - len + k] *= v;
+      }
+    }
+
+    // Stretch/resample van een uitsnede, met cache (sleutel §7.3 stap 4 + preset).
+    // kind: 'f' (muziek) of 'v' (stem). progress(fractie 0..1) tijdens WSOLA.
+    function rawItem(env, kind, item, outLength, progress) {
+      var a = env.audio[item.source], sr = env.sampleRate, cache = env.cache;
+      var who = (kind === 'v' ? 'stem ' : 'fragment ') + item.id;
+      var key = [kind, item.id, item.source, a.version == null ? '' : a.version, item['in'], item.out, outLength, item.mode, item.preset].join('|');
+      if (cache && cache.has(key)) {
+        var hit = cache.get(key);
+        if (typeof cache['delete'] === 'function') { cache['delete'](key); cache.set(key, hit); }
+        if (hit.warning) env.warnings.push(who + ': ' + hit.warning);
+        return hit.channels;
+      }
+      var len = a.channels[0].length;
+      var s0 = Math.max(0, Math.min(len, Math.round(item['in'] * sr))), s1 = Math.max(s0, Math.min(len, Math.round(item.out * sr)));
+      var slice = a.channels.map(function (ch) { return ch.subarray(s0, s1); });
+      var r;
+      if (item.mode === 'varispeed') r = { channels: Resampler.resample(slice, outLength), method: 'varispeed' };
+      else r = Stretch.run(slice, outLength, { preset: item.preset, sampleRate: sr, onProgress: progress });
+      if (r.warning) env.warnings.push(who + ': ' + r.warning);
+      if (cache) {
+        cache.set(key, { channels: r.channels, warning: r.warning || null });
+        if (typeof cache.size === 'number' && typeof cache.keys === 'function' && typeof cache['delete'] === 'function') {
+          while (cache.size > CONSTANTS.RENDER_CACHE_MAX) cache['delete'](cache.keys().next().value);
+        }
+      }
+      return r.channels;
+    }
+
+    function sourceLen(a, item, sr) {
+      var len = a.channels[0].length;
+      var s0 = Math.max(0, Math.min(len, Math.round(item['in'] * sr))), s1 = Math.max(s0, Math.min(len, Math.round(item.out * sr)));
+      return s1 - s0;
+    }
+
+    // Retourneert { sampleRate, channels, stats: {duration, samples, peakDb, clipped}, peak, warnings }.
+    function render(recipe, audio, block, opts) {
+      opts = opts || {};
+      audio = audio || {};
+      var full = computeFitFull(block), fit = full.report;
+      var bl = q(block.name) + ' (' + block.id + ')';
+      if (!fit.ok) fail(fit.error);
+      var warnings = fit.warnings.slice();
+      var T = block.targetDuration, sr = recipe.sampleRate;
+      if (!fit.exportable) {
+        if (fit.contentDuration > T + 1e-6) fail('blok ' + bl + ' is ' + fmt(fit.contentDuration - T) + ' s te lang (' + fmt(fit.contentDuration) + ' s i.p.v. ' + fmt(T) + ' s); verkort de handmatige duren of zet fitMode op proportional');
+        if (full.voiceErrors.length) fail('blok ' + bl + ' kan niet gerenderd worden: ' + full.voiceErrors.join('; '));
+        fail('blok ' + bl + ' kan niet gerenderd worden: ' + fit.warnings.join('; '));
+      }
+      if (full.unaccepted.length) {
+        fail('blok ' + bl + ' kan niet gerenderd worden: ' + full.unaccepted.map(function (o) {
+          return 'stemfragmenten ' + o.a + ' en ' + o.b + ' overlappen ' + fmt(o.duration) + ' s';
+        }).join('; ') + '. Accepteer de overlap met acceptOverlap: true op het later startende fragment (update_voice {"voice":"' +
+          full.unaccepted[0].b + '","acceptOverlap":true}) of verschuif een van beide');
+      }
+      var fr = block.fragments, n = fr.length, tr = block.transitions, vs = block.voice || [], i, c, k;
+      var missing = fr.concat(vs).filter(function (f) { return !audio[f.source]; }).map(function (f) { return f.source; });
+      if (missing.length) {
+        var uniq = missing.filter(function (x, ix) { return missing.indexOf(x) === ix; });
+        fail('blok ' + q(block.name) + ' is niet renderbaar: ontbrekende bron(nen) ' + uniq.join(', ') + '; laad die bestanden eerst');
+      }
+      fr.concat(vs).forEach(function (f) {
+        var a = audio[f.source];
+        if (a.sampleRate != null && a.sampleRate !== sr) fail('bron ' + q(f.source) + ' staat op ' + a.sampleRate + ' Hz; verwacht de werkfrequentie ' + sr + ' Hz (eerst resamplen)');
+      });
+      // 1. total
+      var total = Math.round(T * sr);
+      // 2. outLength_i, overlap en gap in samples
+      var outLen = fit.fragments.map(function (fe) { return Math.round(fe.targetDuration * sr); });
+      var ov = fit.transitions.map(function (te) { return Math.round(te.overlap * sr); });
+      var gp = fit.transitions.map(function (te) { return Math.round(te.gap * sr); });
+      function contentLen() {
+        var s = 0; for (var a = 0; a < n; a++) s += outLen[a];
+        for (var b = 0; b < n - 1; b++) s += gp[b] - ov[b];
+        return s;
+      }
+      // 3. afrondingsverschil op het laatste vrije fragment
+      var lastFree = -1;
+      for (i = n - 1; i >= 0; i--) if (!fr[i].locked) { lastFree = i; break; }
+      var exact = block.fitMode === 'proportional' && lastFree >= 0;
+      var diff = total - contentLen();
+      if (exact) outLen[lastFree] += diff;
+      else if (diff < 0) {
+        if (-diff > n + 1) fail('blok ' + q(block.name) + ' is ' + (-diff) + ' samples te lang');
+        outLen[lastFree >= 0 ? lastFree : n - 1] += diff;
+      }
+      for (i = 0; i < n; i++) if (outLen[i] < 1) fail('fragment ' + fr[i].id + ' krijgt een doelduur van ' + outLen[i] + ' samples; blok ' + q(block.name) + ' is te krap');
+      for (i = 0; i < n - 1; i++) ov[i] = Math.min(ov[i], outLen[i], outLen[i + 1]);
+      if (exact) {
+        var d2 = total - contentLen();
+        if (d2 !== 0) outLen[lastFree] += d2;
+      }
+      // 6. startposities (vooraf, zodat de stem aan zijn anker kan hangen)
+      var starts = [], sPos = 0;
+      for (i = 0; i < n; i++) { starts.push(sPos); if (i < n - 1) sPos = sPos + outLen[i] - ov[i] + gp[i]; }
+      // Stem: lengte en startsample = uitvoerstart anker + offset (begrensd op het blok;
+      // de fit heeft al gecontroleerd dat de stem binnen het blok valt, verschil ≤ afronding).
+      var fids = fr.map(function (f) { return f.id; });
+      var vPlan = vs.map(function (v) {
+        var a = audio[v.source];
+        var L = v.targetDuration == null ? sourceLen(a, v, sr) : Math.round(v.targetDuration * sr);
+        if (L < 1) fail('stem ' + v.id + ' krijgt een duur van ' + L + ' samples; kies een langere uitsnede of targetDuration');
+        if (L > total) fail('stem ' + v.id + ' is ' + fmt((L - total) / sr) + ' s te lang voor blok ' + bl);
+        var st = starts[fids.indexOf(v.anchor)] + Math.round((v.offset || 0) * sr);
+        st = Math.max(0, Math.min(st, total - L));
+        return { v: v, start: st, len: L };
+      });
+
+      // Voortgang: gewicht per taak = aantal uitvoersamples; mixen ≈ 5%.
+      var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+      var weights = outLen.concat(vPlan.map(function (p) { return p.len; }));
+      var W = 0; weights.forEach(function (w) { W += Math.max(1, w); });
+      var mixW = Math.max(1, Math.round(W * 0.05)); W += mixW;
+      var doneW = 0, lastF = 0;
+      function report(frac, label) {
+        if (!onProgress) return;
+        var f = frac > 1 ? 1 : (frac < lastF ? lastF : frac);
+        lastF = f;
+        onProgress(f, label);
+      }
+      function job(w, label) {
+        var base = doneW; w = Math.max(1, w);
+        report(base / W, label);
+        return {
+          progress: function (x) { report((base + w * Math.max(0, Math.min(1, x))) / W, label); },
+          done: function () { doneW = base + w; report(doneW / W, label); }
+        };
+      }
+      var env = { audio: audio, sampleRate: sr, cache: opts.cache || null, warnings: warnings };
+
+      var C = 1;
+      fr.concat(vs).forEach(function (f) { C = Math.max(C, audio[f.source].channels.length); });
+      var out = [];
+      for (c = 0; c < C; c++) out.push(new Float32Array(total));
+      var micro = Math.round(CONSTANTS.MICROFADE_MS / 1000 * sr);
+      var duckRamp = Math.round(CONSTANTS.DUCK_RAMP_MS / 1000 * sr);
+      var endPos = 0;
+      for (i = 0; i < n; i++) {
+        var f = fr[i], L = outLen[i], start = starts[i];
+        // 4. stretchen of resamplen (cache)
+        var jb = job(L, 'muziek ' + (i + 1) + '/' + n + ' rekken');
+        var raw = rawItem(env, 'f', f, L, jb.progress);
+        jb.done();
+        // 5. gain en omhulling
+        var g = new Float32Array(L);
+        g.fill(dbToLin(f.gainDb || 0));
+        var left = null, right = null;
+        if (i === 0) left = { kind: 'fade', len: Math.round((f.fadeInMs || 0) / 1000 * sr), own: true };
+        else {
+          var tl = tr[i - 1];
+          if (tl.type === 'crossfade' || tl.type === 'fade_in_b') left = { kind: 'curve', len: ov[i - 1], curve: tl.curve || 'equal_power' };
+          else left = { kind: 'fade', len: micro };
+        }
+        if (i === n - 1) right = { kind: 'fade', len: Math.round((f.fadeOutMs || 0) / 1000 * sr), own: true };
+        else {
+          var trr = tr[i];
+          if (trr.type === 'crossfade' || trr.type === 'fade_out_a') right = { kind: 'curve', len: ov[i], curve: trr.curve || 'equal_power' };
+          else if (trr.type === 'duck') right = { kind: 'duck', len: ov[i], level: dbToLin(typeof trr.duckDb === 'number' ? trr.duckDb : CONSTANTS.DUCK_DEFAULT_DB), ramp: Math.min(duckRamp, Math.floor(ov[i] / 2)) };
+          else right = { kind: 'fade', len: micro };
+        }
+        // Fades/overgangen samen langer dan het fragment → fades evenredig inkorten
+        // (overgangscurves liggen vast: die bepalen de uitlijning).
+        if (left.len + right.len > L) {
+          var fixed = (left.kind !== 'fade' ? left.len : 0) + (right.kind !== 'fade' ? right.len : 0);
+          var flex = (left.kind === 'fade' ? left.len : 0) + (right.kind === 'fade' ? right.len : 0);
+          var room = Math.max(0, L - fixed), sc = flex > 0 ? Math.min(1, room / flex) : 1;
+          if (left.kind === 'fade') left.len = Math.floor(left.len * sc);
+          if (right.kind === 'fade') right.len = Math.floor(right.len * sc);
+          if ((left.own || right.own) && sc < 1) warnings.push('fragment ' + f.id + ': fades samen langer dan het fragment; evenredig ingekort');
+        }
+        if (left.len > 0) { if (left.kind === 'curve') curveIn(g, left.len, left.curve); else fadeInGain(g, left.len); }
+        if (right.len > 0) {
+          if (right.kind === 'curve') curveOut(g, L, right.len, right.curve);
+          else if (right.kind === 'duck') { if (right.ramp > 0) duckOut(g, L, right.len, right.level, right.ramp); else curveOut(g, L, right.len, 'linear'); }
+          else fadeOutGain(g, L, right.len);
+        }
+        var RC = raw.length;
+        for (c = 0; c < C; c++) {
+          var rc = raw[c % RC], dst = out[c];
+          var lim = Math.min(L, total - start);
+          for (k = 0; k < lim; k++) dst[start + k] += rc[k] * g[k];
+        }
+        endPos = start + L;
+      }
+      // 7. invariant (muziekspoor)
+      if (out[0].length !== total || (exact && endPos !== total) || endPos > total) {
+        throw new Error('Interne fout: lengte-invariant geschonden in blok ' + block.id + ' (uitvoer ' + endPos + ' samples, verwacht ' + total + ')');
+      }
+
+      // §6.10 stemmen stretchen (alleen met targetDuration; anders kopie op oorspronkelijke snelheid)
+      var vRaw = vPlan.map(function (p, j) {
+        var jv = job(p.len, 'stem ' + (j + 1) + '/' + vPlan.length + ' rekken');
+        var r = rawItem(env, 'v', p.v, p.len, jv.progress);
+        jv.done();
+        return r;
+      });
+      report(doneW / W, 'mixen');
+      // Ducking-omhullende op de muziek (cosinus, zones samengevoegd, begrensd op het blok)
+      if (vPlan.length && block.duckDb < 0) {
+        var level = dbToLin(block.duckDb), rampS = Math.round((block.duckMs || 0) / 1000 * sr);
+        var groups = duckGroups(vPlan.map(function (p) { return { start: p.start, end: p.start + p.len }; }), rampS, total);
+        var envG = new Float32Array(total); envG.fill(1);
+        groups.forEach(function (gr) {
+          var a0 = gr.start, a1 = gr.vStart, b0 = gr.vEnd, b1 = gr.end, kk;
+          for (kk = a0; kk < a1; kk++) envG[kk] = 1 - (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * (kk - a0) / (a1 - a0)));
+          for (kk = a1; kk < b0; kk++) envG[kk] = level;
+          for (kk = b0; kk < b1; kk++) envG[kk] = level + (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * (kk - b0) / (b1 - b0)));
+        });
+        for (c = 0; c < C; c++) { var oc0 = out[c]; for (k = 0; k < total; k++) oc0[k] *= envG[k]; }
+      }
+      // Stemmen optellen: gain, eigen fades (cosinus), op hun startsample.
+      vPlan.forEach(function (p, j) {
+        var v = p.v, L = p.len, raw = vRaw[j];
+        var g = new Float32Array(L);
+        g.fill(dbToLin(v.gainDb || 0));
+        var fi = Math.round((v.fadeInMs || 0) / 1000 * sr), fo = Math.round((v.fadeOutMs || 0) / 1000 * sr);
+        if (fi + fo > L) {
+          var scv = L / (fi + fo);
+          fi = Math.floor(fi * scv); fo = Math.floor(fo * scv);
+          warnings.push('stem ' + v.id + ': fades samen langer dan het stemfragment; evenredig ingekort');
+        }
+        if (fi > 0) fadeInGain(g, fi);
+        if (fo > 0) fadeOutGain(g, L, fo);
+        var RC = raw.length;
+        for (c = 0; c < C; c++) {
+          var rc = raw[c % RC], dst = out[c], st = p.start;
+          for (k = 0; k < L; k++) dst[st + k] += rc[k] * g[k];
+        }
+      });
+      if (out[0].length !== total) throw new Error('Interne fout: lengte-invariant geschonden in blok ' + block.id + ' na het stemspoor');
+      var peak = 0;
+      for (c = 0; c < C; c++) { var oc = out[c]; for (k = 0; k < total; k++) { var av = oc[k] < 0 ? -oc[k] : oc[k]; if (av > peak) peak = av; } }
+      var clipped = peak > 1;
+      if (clipped) warnings.push('blok ' + q(block.name) + ': piek ' + linToDb(peak) + ' dBFS boven 0 dBFS; bij export begrensd op ±1,0 (overweeg gainDb lager of normalize)');
+      report(1, 'klaar');
+      return { sampleRate: sr, channels: out, stats: { duration: total / sr, samples: total, peakDb: linToDb(peak), clipped: clipped }, peak: peak, warnings: warnings };
+    }
+    return { render: render };
+  })();
+
+  // Pure render-API voor de achtergrondthread (contract fase 2). Geen interne state.
+  function renderBlockPure(recipe, audio, blockId, opts) {
+    var nr = Validator.normalizeRecipe(recipe);
+    if (nr.problems.length) fail('recept bevat ' + nr.problems.length + ' probleem/problemen: ' + nr.problems.join('; '));
+    var block = findBlock(nr.recipe, blockId);
+    var r = Renderer.render(nr.recipe, audio || {}, block, opts || {});
+    return { sampleRate: r.sampleRate, channels: r.channels, stats: r.stats, warnings: r.warnings };
+  }
+
+  /* =====================================================================
    * Generator- en meethulpen (selftest)
    * ===================================================================== */
   function mulberry32(a) {
@@ -1040,7 +1386,7 @@ var AudioFit = (function () {
       audioVersion: 0,
       undo: [], redo: [],
       listeners: [],
-      counters: { b: 0, f: 0 }
+      counters: { b: 0, f: 0, v: 0 }
     };
     function audioNames() { return Object.keys(Store.audio); }
     function notify() {
@@ -1064,6 +1410,7 @@ var AudioFit = (function () {
       recipe.blocks.forEach(function (b) {
         var mb = /^b(\d+)$/.exec(b.id); if (mb) Store.counters.b = Math.max(Store.counters.b, +mb[1]);
         b.fragments.forEach(function (f) { var mf = /^f(\d+)$/.exec(f.id); if (mf) Store.counters.f = Math.max(Store.counters.f, +mf[1]); });
+        (b.voice || []).forEach(function (v) { var mv = /^v(\d+)$/.exec(v.id); if (mv) Store.counters.v = Math.max(Store.counters.v, +mv[1]); });
       });
     }
     function nextId(kind, recipe) {
@@ -1133,13 +1480,7 @@ var AudioFit = (function () {
     }
 
     /* --------------------------- Opzoekhulpen -------------------------- */
-    function getBlock(recipe, ref) {
-      for (var i = 0; i < recipe.blocks.length; i++) if (recipe.blocks[i].id === ref) return recipe.blocks[i];
-      var byName = recipe.blocks.filter(function (b) { return b.name === ref; });
-      if (byName.length === 1) return byName[0];
-      var list = recipe.blocks.map(function (b) { return b.id + ' (' + b.name + ')'; });
-      fail('blok ' + q(ref) + ' bestaat niet; ' + (list.length ? 'bestaande blokken: ' + list.join(', ') : 'er zijn nog geen blokken; maak er een met create_block'));
-    }
+    var getBlock = findBlock;
     function getFragment(recipe, id) {
       for (var i = 0; i < recipe.blocks.length; i++) {
         var b = recipe.blocks[i];
@@ -1167,163 +1508,54 @@ var AudioFit = (function () {
       var durMs = (tout - tin) * 1000;
       if (durMs < CONSTANTS.MIN_FRAGMENT_MS - 1e-9) fail('fragment is ' + (Math.round(durMs * 10) / 10) + ' ms lang; minimaal ' + CONSTANTS.MIN_FRAGMENT_MS + ' ms');
     }
+    function getVoice(recipe, id) {
+      for (var i = 0; i < recipe.blocks.length; i++) {
+        var b = recipe.blocks[i], vs = b.voice || [];
+        for (var j = 0; j < vs.length; j++) if (vs[j].id === id) return { block: b, index: j, voice: vs[j] };
+      }
+      var list = [];
+      recipe.blocks.forEach(function (b) { (b.voice || []).forEach(function (v) { list.push(v.id + ' (' + b.name + ')'); }); });
+      fail('stem ' + q(id) + ' bestaat niet; ' + (list.length ? 'bestaande stemfragmenten: ' + list.join(', ') : 'er zijn nog geen stemfragmenten; voeg er een toe met add_voice'));
+    }
+    function checkAnchor(block, anchor) {
+      var ids = block.fragments.map(function (f) { return f.id; });
+      if (ids.indexOf(anchor) < 0) {
+        fail('anker ' + q(anchor) + ' is geen muziekfragment van blok ' + q(block.name) + ' (' + block.id + '); ' +
+          (ids.length ? 'kies uit: ' + ids.join(', ') : 'voeg eerst een muziekfragment toe met add_fragment'));
+      }
+    }
+    function voicesOnAnchor(block, fragId) {
+      return (block.voice || []).filter(function (v) { return v.anchor === fragId; }).map(function (v) { return v.id; });
+    }
+    // Resultaat van add_voice/update_voice: { id, in, out, start, end } (+ warnings over deze stem, indien aanwezig).
+    function voiceResult(block, v) {
+      var rep = computeFit(block), e = null;
+      rep.voice.forEach(function (x) { if (x.id === v.id) e = x; });
+      var res = { id: v.id, 'in': v['in'], out: v.out, start: e ? e.start : null, end: e ? e.end : null };
+      var re = new RegExp('\\b' + v.id + '\\b');
+      var w = rep.ok ? rep.warnings.filter(function (x) { return re.test(x); }) : [rep.error];
+      if (w.length) res.warnings = w;
+      return res;
+    }
 
     /* ----------------------------- Renderer ---------------------------- */
+    // Zelfde pure Renderer als renderBlockPure; hier met de cache en audio van de instantie.
     var renderCache = new Map();
     var rendered = {};
-
-    function rawFragment(recipe, f, outLength, warnings) {
-      var a = Store.audio[f.source];
-      if (!a) fail('bron ' + q(f.source) + ' van fragment ' + f.id + ' is niet geladen; laad het bestand eerst (attachAudio)');
-      var sr = recipe.sampleRate;
-      var key = [f.id, f.source, a.version, f['in'], f.out, outLength, f.mode, f.preset].join('|');
-      if (renderCache.has(key)) {
-        var hit = renderCache.get(key);
-        renderCache.delete(key); renderCache.set(key, hit);
-        if (hit.warning) warnings.push('fragment ' + f.id + ': ' + hit.warning);
-        return hit.channels;
-      }
-      var len = a.channels[0].length;
-      var s0 = Math.max(0, Math.min(len, Math.round(f['in'] * sr))), s1 = Math.max(s0, Math.min(len, Math.round(f.out * sr)));
-      var slice = a.channels.map(function (ch) { return ch.subarray(s0, s1); });
-      var r;
-      if (f.mode === 'varispeed') r = { channels: Resampler.resample(slice, outLength), method: 'varispeed' };
-      else r = Stretch.run(slice, outLength, { preset: f.preset, sampleRate: sr });
-      if (r.warning) warnings.push('fragment ' + f.id + ': ' + r.warning);
-      renderCache.set(key, { channels: r.channels, warning: r.warning || null });
-      while (renderCache.size > CONSTANTS.RENDER_CACHE_MAX) renderCache.delete(renderCache.keys().next().value);
-      return r.channels;
-    }
-
-    function fadeInGain(g, len) { for (var k = 0; k < len; k++) g[k] *= 0.5 - 0.5 * Math.cos(Math.PI * k / len); }
-    function fadeOutGain(g, n, len) { for (var k = 0; k < len; k++) g[n - len + k] *= 0.5 + 0.5 * Math.cos(Math.PI * (k + 1) / len); }
-    function curveIn(g, len, curve) {
-      for (var k = 0; k < len; k++) { var x = k / len; g[k] *= curve === 'linear' ? x : Math.sin(x * Math.PI / 2); }
-    }
-    function curveOut(g, n, len, curve) {
-      for (var k = 0; k < len; k++) { var x = k / len; g[n - len + k] *= curve === 'linear' ? 1 - x : Math.cos(x * Math.PI / 2); }
-    }
-    function duckOut(g, n, len, level, ramp) {
-      for (var k = 0; k < len; k++) {
-        var v;
-        if (k < ramp) v = 1 - (1 - level) * (0.5 - 0.5 * Math.cos(Math.PI * k / ramp));
-        else if (k < len - ramp) v = level;
-        else { var kk = k - (len - ramp); v = level * (0.5 + 0.5 * Math.cos(Math.PI * (kk + 1) / ramp)); }
-        g[n - len + k] *= v;
-      }
-    }
-
-    function renderBlock(recipe, block) {
-      var fit = computeFit(block);
-      if (!fit.ok) fail(fit.error);
-      var warnings = fit.warnings.slice();
-      var T = block.targetDuration, sr = recipe.sampleRate;
-      if (!fit.exportable) {
-        if (fit.contentDuration > T + 1e-6) fail('blok ' + q(block.name) + ' (' + block.id + ') is ' + fmt(fit.contentDuration - T) + ' s te lang (' + fmt(fit.contentDuration) + ' s i.p.v. ' + fmt(T) + ' s); verkort de handmatige duren of zet fitMode op proportional');
-        fail('blok ' + q(block.name) + ' (' + block.id + ') kan niet gerenderd worden: ' + fit.warnings.join('; '));
-      }
-      var fr = block.fragments, n = fr.length, tr = block.transitions, i, c, k;
-      var missing = fr.filter(function (f) { return !Store.audio[f.source]; }).map(function (f) { return f.source; });
-      if (missing.length) {
-        var uniq = missing.filter(function (x, ix) { return missing.indexOf(x) === ix; });
-        fail('blok ' + q(block.name) + ' is niet renderbaar: ontbrekende bron(nen) ' + uniq.join(', ') + '; laad die bestanden eerst');
-      }
-      // 1. total
-      var total = Math.round(T * sr);
-      // 2. outLength_i, overlap en gap in samples
-      var outLen = fit.fragments.map(function (fe) { return Math.round(fe.targetDuration * sr); });
-      var ov = fit.transitions.map(function (te) { return Math.round(te.overlap * sr); });
-      var gp = fit.transitions.map(function (te) { return Math.round(te.gap * sr); });
-      function contentLen() {
-        var s = 0; for (var a = 0; a < n; a++) s += outLen[a];
-        for (var b = 0; b < n - 1; b++) s += gp[b] - ov[b];
-        return s;
-      }
-      // 3. afrondingsverschil op het laatste vrije fragment
-      var lastFree = -1;
-      for (i = n - 1; i >= 0; i--) if (!fr[i].locked) { lastFree = i; break; }
-      var exact = block.fitMode === 'proportional' && lastFree >= 0;
-      var diff = total - contentLen();
-      if (exact) outLen[lastFree] += diff;
-      else if (diff < 0) {
-        if (-diff > n + 1) fail('blok ' + q(block.name) + ' is ' + (-diff) + ' samples te lang');
-        outLen[lastFree >= 0 ? lastFree : n - 1] += diff;
-      }
-      for (i = 0; i < n; i++) if (outLen[i] < 1) fail('fragment ' + fr[i].id + ' krijgt een doelduur van ' + outLen[i] + ' samples; blok ' + q(block.name) + ' is te krap');
-      for (i = 0; i < n - 1; i++) ov[i] = Math.min(ov[i], outLen[i], outLen[i + 1]);
-      if (exact) {
-        var d2 = total - contentLen();
-        if (d2 !== 0) outLen[lastFree] += d2;
-      }
-      var C = 1;
-      fr.forEach(function (f) { C = Math.max(C, Store.audio[f.source].channels.length); });
-      var out = [];
-      for (c = 0; c < C; c++) out.push(new Float32Array(total));
-      var micro = Math.round(CONSTANTS.MICROFADE_MS / 1000 * sr);
-      var duckRamp = Math.round(CONSTANTS.DUCK_RAMP_MS / 1000 * sr);
-      // 6. startposities
-      var start = 0, endPos = 0;
-      for (i = 0; i < n; i++) {
-        var f = fr[i], L = outLen[i];
-        // 4. stretchen of resamplen (cache)
-        var raw = rawFragment(recipe, f, L, warnings);
-        // 5. gain en omhulling
-        var g = new Float32Array(L);
-        g.fill(dbToLin(f.gainDb || 0));
-        var left = null, right = null;
-        if (i === 0) left = { kind: 'fade', len: Math.round((f.fadeInMs || 0) / 1000 * sr), own: true };
-        else {
-          var tl = tr[i - 1];
-          if (tl.type === 'crossfade' || tl.type === 'fade_in_b') left = { kind: 'curve', len: ov[i - 1], curve: tl.curve || 'equal_power' };
-          else left = { kind: 'fade', len: micro };
-        }
-        if (i === n - 1) right = { kind: 'fade', len: Math.round((f.fadeOutMs || 0) / 1000 * sr), own: true };
-        else {
-          var trr = tr[i];
-          if (trr.type === 'crossfade' || trr.type === 'fade_out_a') right = { kind: 'curve', len: ov[i], curve: trr.curve || 'equal_power' };
-          else if (trr.type === 'duck') right = { kind: 'duck', len: ov[i], level: dbToLin(typeof trr.duckDb === 'number' ? trr.duckDb : CONSTANTS.DUCK_DEFAULT_DB), ramp: Math.min(duckRamp, Math.floor(ov[i] / 2)) };
-          else right = { kind: 'fade', len: micro };
-        }
-        // Fades/overgangen samen langer dan het fragment → fades evenredig inkorten
-        // (overgangscurves liggen vast: die bepalen de uitlijning).
-        if (left.len + right.len > L) {
-          var fixed = (left.kind !== 'fade' ? left.len : 0) + (right.kind !== 'fade' ? right.len : 0);
-          var flex = (left.kind === 'fade' ? left.len : 0) + (right.kind === 'fade' ? right.len : 0);
-          var room = Math.max(0, L - fixed), sc = flex > 0 ? Math.min(1, room / flex) : 1;
-          if (left.kind === 'fade') left.len = Math.floor(left.len * sc);
-          if (right.kind === 'fade') right.len = Math.floor(right.len * sc);
-          if ((left.own || right.own) && sc < 1) warnings.push('fragment ' + f.id + ': fades samen langer dan het fragment; evenredig ingekort');
-        }
-        if (left.len > 0) { if (left.kind === 'curve') curveIn(g, left.len, left.curve); else fadeInGain(g, left.len); }
-        if (right.len > 0) {
-          if (right.kind === 'curve') curveOut(g, L, right.len, right.curve);
-          else if (right.kind === 'duck') { if (right.ramp > 0) duckOut(g, L, right.len, right.level, right.ramp); else curveOut(g, L, right.len, 'linear'); }
-          else fadeOutGain(g, L, right.len);
-        }
-        var RC = raw.length;
-        for (c = 0; c < C; c++) {
-          var rc = raw[c % RC], dst = out[c];
-          var lim = Math.min(L, total - start);
-          for (k = 0; k < lim; k++) dst[start + k] += rc[k] * g[k];
-        }
-        endPos = start + L;
-        if (i < n - 1) start = start + L - ov[i] + gp[i];
-      }
-      // 7. invariant
-      if (out[0].length !== total || (exact && endPos !== total) || endPos > total) {
-        throw new Error('Interne fout: lengte-invariant geschonden in blok ' + block.id + ' (uitvoer ' + endPos + ' samples, verwacht ' + total + ')');
-      }
-      var peak = 0;
-      for (c = 0; c < C; c++) { var oc = out[c]; for (k = 0; k < total; k++) { var av = oc[k] < 0 ? -oc[k] : oc[k]; if (av > peak) peak = av; } }
-      var clipped = peak > 1;
-      if (clipped) warnings.push('blok ' + q(block.name) + ': piek ' + linToDb(peak) + ' dBFS boven 0 dBFS; bij export begrensd op ±1,0 (overweeg gainDb lager of normalize)');
-      rendered[block.id] = { sampleRate: sr, channels: out };
-      return { block: block.id, duration: total / sr, samples: total, channels: C, peakDb: linToDb(peak), peak: peak, clipped: clipped, warnings: warnings };
+    function renderBlock(recipe, block, onProgress) {
+      var r = Renderer.render(recipe, Store.audio, block, { cache: renderCache, onProgress: onProgress });
+      rendered[block.id] = { sampleRate: r.sampleRate, channels: r.channels };
+      return { block: block.id, duration: r.stats.duration, samples: r.stats.samples, channels: r.channels.length,
+        peakDb: r.stats.peakDb, peak: r.peak, clipped: r.stats.clipped, warnings: r.warnings };
     }
 
     /* ----------------------------- Commands ---------------------------- */
     var T_TIME = { type: ['number', 'string'], description: 'seconden of "@markernaam"' };
     var T_REF = { type: 'string', minLength: 1 };
+    var T_OFFSET = { type: 'number', description: 'seconden na het begin van het anker in de uitvoer (mag negatief)' };
+    var T_VTD = { type: ['number', 'null'], exclusiveMinimum: 0, description: 'doelduur van de stem in seconden; null = oorspronkelijke snelheid' };
+    var T_DUCKDB = { type: 'number', maximum: 0, description: 'ducking van de muziek onder de stem in dB (≤ 0; 0 = uit)' };
+    var T_DUCKMS = { type: 'number', minimum: 0, maximum: CONSTANTS.VOICE_DUCK_MAX_MS, description: 'duur van de ducking-hellingen in ms' };
     function obj(props, required) { return { type: 'object', properties: props, required: required || [], additionalProperties: false }; }
 
     var commands = [
@@ -1380,29 +1612,32 @@ var AudioFit = (function () {
 
       { name: 'create_block', description: 'Maakt een nieuw blok met een doelduur in seconden (3 decimalen).',
         schema: obj({ name: { type: 'string' }, targetDuration: { type: 'number', exclusiveMinimum: 0, description: 'seconden' },
-          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES } }, []),
+          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES }, duckDb: T_DUCKDB, duckMs: T_DUCKMS }, []),
         run: function (a, ctx) {
           var id = nextId('b', ctx.recipe);
           var td = a.targetDuration !== undefined ? a.targetDuration : ctx.recipe.defaults.blockDuration;
           var b = { id: id, name: a.name || ('Blok ' + (ctx.recipe.blocks.length + 1)), targetDuration: Math.round(td * 1000) / 1000,
-            fitMode: a.fitMode || 'proportional', fragments: [], transitions: [] };
+            fitMode: a.fitMode || 'proportional', duckDb: a.duckDb !== undefined ? a.duckDb : CONSTANTS.VOICE_DUCK_DEFAULT_DB,
+            duckMs: a.duckMs !== undefined ? a.duckMs : CONSTANTS.VOICE_DUCK_DEFAULT_MS, fragments: [], transitions: [], voice: [] };
           if (!(b.targetDuration > 0)) fail('targetDuration moet groter dan 0 zijn (na afronden op 3 decimalen)');
           ctx.recipe.blocks.push(b);
           return { id: id };
         } },
 
-      { name: 'update_block', description: 'Wijzigt naam, doelduur of fit-modus van een blok.',
+      { name: 'update_block', description: 'Wijzigt naam, doelduur, fit-modus of ducking (duckDb ≤ 0, 0 = uit; duckMs) van een blok.',
         schema: obj({ block: T_REF, name: { type: 'string' }, targetDuration: { type: 'number', exclusiveMinimum: 0 },
-          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES } }, ['block']),
+          fitMode: { type: 'string', 'enum': CONSTANTS.FIT_MODES }, duckDb: T_DUCKDB, duckMs: T_DUCKMS }, ['block']),
         run: function (a, ctx) {
           var b = getBlock(ctx.recipe, a.block);
           if (a.name !== undefined) b.name = a.name;
           if (a.targetDuration !== undefined) { var td = Math.round(a.targetDuration * 1000) / 1000; if (!(td > 0)) fail('targetDuration moet groter dan 0 zijn'); b.targetDuration = td; }
           if (a.fitMode !== undefined) b.fitMode = a.fitMode;
+          if (a.duckDb !== undefined) b.duckDb = a.duckDb;
+          if (a.duckMs !== undefined) b.duckMs = a.duckMs;
           return null;
         } },
 
-      { name: 'delete_block', description: 'Verwijdert een blok met zijn fragmenten.', schema: obj({ block: T_REF }, ['block']),
+      { name: 'delete_block', description: 'Verwijdert een blok met zijn fragmenten en stemfragmenten.', schema: obj({ block: T_REF }, ['block']),
         run: function (a, ctx) {
           var b = getBlock(ctx.recipe, a.block);
           ctx.recipe.blocks.splice(ctx.recipe.blocks.indexOf(b), 1);
@@ -1452,6 +1687,11 @@ var AudioFit = (function () {
           var dest = a.block !== undefined ? getBlock(r, a.block) : loc.block;
           var maxPos = dest === loc.block ? dest.fragments.length - 1 : dest.fragments.length;
           if (a.position > maxPos) fail('position ' + a.position + ' ligt buiten het blok; kies 0 t/m ' + maxPos);
+          if (dest !== loc.block) {
+            var vOn = voicesOnAnchor(loc.block, loc.fragment.id);
+            if (vOn.length) fail('fragment ' + loc.fragment.id + ' is het anker van stem ' + vOn.join(', ') + ' en kan niet naar een ander blok; ' +
+              'verwijder die stem(men) eerst (delete_voice) of hang ze aan een ander fragment (update_voice met anchor)');
+          }
           removeFragmentAt(loc.block, loc.index);
           insertFragment(r, dest, loc.fragment, a.position);
           return null;
@@ -1465,8 +1705,62 @@ var AudioFit = (function () {
           return { id: f.id };
         } },
 
-      { name: 'delete_fragment', description: 'Verwijdert een fragment (en de bijbehorende overgang).', schema: obj({ fragment: T_REF }, ['fragment']),
-        run: function (a, ctx) { var loc = getFragment(ctx.recipe, a.fragment); removeFragmentAt(loc.block, loc.index); return null; } },
+      { name: 'delete_fragment', description: 'Verwijdert een muziekfragment (en de bijbehorende overgang). Geweigerd als het fragment anker van een stem is.',
+        schema: obj({ fragment: T_REF }, ['fragment']),
+        run: function (a, ctx) {
+          var loc = getFragment(ctx.recipe, a.fragment);
+          var vOn = voicesOnAnchor(loc.block, loc.fragment.id);
+          if (vOn.length) fail('fragment ' + loc.fragment.id + ' is het anker van stem ' + vOn.join(', ') + '; verwijder eerst die stem(men) (delete_voice) ' +
+            'of hang ze aan een ander fragment (update_voice met anchor)');
+          removeFragmentAt(loc.block, loc.index);
+          return null;
+        } },
+
+      { name: 'add_voice', description: 'Voegt een stemfragment (voice-over) toe dat bovenop de muziek klinkt. Start in het blok = uitvoerstart van het anker (muziekfragment-id) + offset (s, mag negatief); schuift mee met de fit. targetDuration null = oorspronkelijke snelheid. Resultaat: id, werkelijke in/uit, start/end in het blok.',
+        schema: obj({ block: T_REF, source: T_REF, 'in': T_TIME, out: T_TIME, anchor: { type: 'string', minLength: 1, description: 'id van een muziekfragment in dit blok' },
+          offset: T_OFFSET, targetDuration: T_VTD, snap: { type: 'boolean' },
+          preset: { type: 'string', 'enum': CONSTANTS.PRESETS }, mode: { type: 'string', 'enum': CONSTANTS.MODES }, gainDb: { type: 'number' },
+          fadeInMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS }, fadeOutMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS },
+          acceptOverlap: { type: 'boolean' } }, ['block', 'source', 'in', 'out', 'anchor']),
+        run: function (a, ctx) {
+          var r = ctx.recipe, b = getBlock(r, a.block), s = getSource(r, a.source);
+          checkAnchor(b, a.anchor);
+          var tin = resolveTime(s, a['in'], 'in'), tout = resolveTime(s, a.out, 'out');
+          if (a.snap !== false) { tin = snapToZero(s.name, tin); tout = snapToZero(s.name, tout); }
+          tin = roundT(tin); tout = roundT(tout);
+          checkFragmentSpan(s, tin, tout);
+          var v = { id: nextId('v', r), source: s.name, 'in': tin, out: tout, anchor: a.anchor, offset: roundT(a.offset || 0),
+            targetDuration: a.targetDuration != null ? roundT(a.targetDuration) : null,
+            mode: a.mode || 'pitch', preset: a.preset || CONSTANTS.VOICE_DEFAULT_PRESET, gainDb: a.gainDb || 0,
+            fadeInMs: a.fadeInMs !== undefined ? a.fadeInMs : r.defaults.fadeMs, fadeOutMs: a.fadeOutMs !== undefined ? a.fadeOutMs : r.defaults.fadeMs,
+            acceptOverlap: !!a.acceptOverlap };
+          if (!b.voice) b.voice = [];
+          b.voice.push(v);
+          return voiceResult(b, v);
+        } },
+
+      { name: 'update_voice', description: 'Wijzigt een stemfragment: in/out (met snap), anchor, offset, targetDuration (null = oorspronkelijke snelheid), acceptOverlap, gain, fades, preset, mode.',
+        schema: obj({ voice: T_REF, 'in': T_TIME, out: T_TIME, snap: { type: 'boolean' }, anchor: { type: 'string', minLength: 1 }, offset: T_OFFSET,
+          targetDuration: T_VTD, acceptOverlap: { type: 'boolean' }, gainDb: { type: 'number' },
+          fadeInMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS }, fadeOutMs: { type: 'number', minimum: 0, maximum: CONSTANTS.FADE_MAX_MS },
+          preset: { type: 'string', 'enum': CONSTANTS.PRESETS }, mode: { type: 'string', 'enum': CONSTANTS.MODES } }, ['voice']),
+        run: function (a, ctx) {
+          var loc = getVoice(ctx.recipe, a.voice), v = loc.voice, s = getSource(ctx.recipe, v.source);
+          var tin = v['in'], tout = v.out;
+          if (a['in'] !== undefined) { tin = resolveTime(s, a['in'], 'in'); if (a.snap !== false) tin = snapToZero(s.name, tin); tin = roundT(tin); }
+          if (a.out !== undefined) { tout = resolveTime(s, a.out, 'out'); if (a.snap !== false) tout = snapToZero(s.name, tout); tout = roundT(tout); }
+          checkFragmentSpan(s, tin, tout);
+          if (a.anchor !== undefined) checkAnchor(loc.block, a.anchor);
+          v['in'] = tin; v.out = tout;
+          if (a.anchor !== undefined) v.anchor = a.anchor;
+          if (a.offset !== undefined) v.offset = roundT(a.offset);
+          if (a.targetDuration !== undefined) v.targetDuration = a.targetDuration === null ? null : roundT(a.targetDuration);
+          ['acceptOverlap', 'gainDb', 'fadeInMs', 'fadeOutMs', 'preset', 'mode'].forEach(function (k) { if (a[k] !== undefined) v[k] = a[k]; });
+          return voiceResult(loc.block, v);
+        } },
+
+      { name: 'delete_voice', description: 'Verwijdert een stemfragment.', schema: obj({ voice: T_REF }, ['voice']),
+        run: function (a, ctx) { var loc = getVoice(ctx.recipe, a.voice); loc.block.voice.splice(loc.index, 1); return null; } },
 
       { name: 'set_transition', description: 'Stelt de overgang in tussen fragment index en index+1: type, ms (overlap of stilte), curve, duckDb.',
         schema: obj({ block: T_REF, index: { type: 'integer', minimum: 0 }, type: { type: 'string', 'enum': CONSTANTS.TRANSITION_TYPES },
@@ -1487,19 +1781,19 @@ var AudioFit = (function () {
           return clone(t);
         } },
 
-      { name: 'fit_report', description: 'Fit-rapport: per fragment brondur, doeldur, ratio, status; per blok of het klopt of de afwijking.',
+      { name: 'fit_report', description: 'Fit-rapport: per fragment brondur, doeldur, ratio, status en start/end in het blok; per overgang start/end; stemmen (voice), ducking-zones (duck), stem-overlaps; per blok of het klopt of de afwijking.',
         schema: obj({ block: T_REF }, []),
         run: function (a, ctx) {
           var blocks = a.block !== undefined ? [getBlock(ctx.recipe, a.block)] : ctx.recipe.blocks;
           return blocks.map(function (b) {
             var rep = computeFit(b);
-            rep.missingSources = b.fragments.map(function (f) { return f.source; })
+            rep.missingSources = b.fragments.concat(b.voice || []).map(function (f) { return f.source; })
               .filter(function (x, i, arr) { return arr.indexOf(x) === i && !Store.audio[x]; });
             return rep;
           });
         } },
 
-      { name: 'render_block', description: 'Rendert een blok (fit + stretch + overgangen). Resultaat: duur, samples, piek in dBFS, clipping.',
+      { name: 'render_block', description: 'Rendert een blok (fit + stretch + overgangen + stemspoor met ducking). Resultaat: duur, samples, piek in dBFS, clipping.',
         schema: obj({ block: T_REF }, ['block']),
         run: function (a, ctx) {
           var r = renderBlock(ctx.recipe, getBlock(ctx.recipe, a.block));
@@ -1677,6 +1971,7 @@ var AudioFit = (function () {
       history: function () { return { undo: Store.undo.length, redo: Store.redo.length }; },
       validateRecipe: function (r) { var nr = Validator.normalizeRecipe(r); return { ok: !nr.problems.length, problems: nr.problems }; },
       computeFit: function (block) { return computeFit(block); },
+      renderBlockPure: renderBlockPure,
       wav: { encode: WavCodec.encode, decode: WavCodec.decode },
       stretch: function (channels, outLength, opts) { return Stretch.run(channels, outLength, opts).channels; },
       stretchInfo: function (channels, outLength, opts) { return Stretch.run(channels, outLength, opts); },
@@ -1831,6 +2126,32 @@ var AudioFit = (function () {
       var y = A.getRendered('b1').channels[0], b = sr, w = Math.round(0.02 * sr), mx = 0;
       for (var i = Math.max(1, b - w); i < Math.min(y.length, b + w); i++) mx = Math.max(mx, Math.abs(y[i] - y[i - 1]));
       return { ok: mx <= 0.1, detail: 'grootste samplesprong rond de grens: ' + mx.toFixed(4) };
+    });
+
+    // Stemspoor (§6.10): stem op de juiste sample-positie, ducking midden in de zone ≈ 10^(duckDb/20)
+    check('§6.10 stem: juiste sample-positie (anker + offset) en ducking-niveau midden in de zone', function () {
+      var A = inst();
+      var duckDb = CONSTANTS.VOICE_DUCK_DEFAULT_DB, lvl = dbToLin(duckDb);
+      A.attachAudio('dc05.wav', { sampleRate: sr, channels: [new Float32Array(2 * sr).fill(0.5)] });
+      var vsrc = new Float32Array(sr), spikeAt = Math.round(0.5 * sr);
+      vsrc[spikeAt] = 0.25;
+      A.attachAudio('stem.wav', { sampleRate: sr, channels: [vsrc] });
+      must(A.execAll([{ cmd: 'create_block', args: { name: 'V', targetDuration: 4.0 } },
+        { cmd: 'add_fragment', args: { block: 'b1', source: 'dc05.wav', 'in': 0, out: 2, snap: false } },
+        { cmd: 'add_fragment', args: { block: 'b1', source: 'dc05.wav', 'in': 0, out: 2, snap: false } },
+        { cmd: 'set_transition', args: { block: 'b1', index: 0, type: 'cut' } },
+        { cmd: 'add_voice', args: { block: 'b1', source: 'stem.wav', 'in': 0, out: 1, anchor: 'f2', offset: 0.3, snap: false } }]));
+      var rep = must(A.exec({ cmd: 'fit_report', args: { block: 'b1' } })).result[0];
+      must(A.exec({ cmd: 'render_block', args: { block: 'b1' } }));
+      var y = A.getRendered('b1').channels[0];
+      var expect = 2 * sr + Math.round(0.3 * sr) + spikeAt, found = -1, best = 0;
+      for (var i = 1; i < y.length; i++) { var dlt = y[i] - y[i - 1]; if (dlt > best) { best = dlt; found = i; } }
+      var z = rep.duck[0], mid = Math.round((z.start + z.end) / 2 * sr) - 50;
+      var gain = y[mid] / 0.5;
+      var ok = found === expect && Math.abs(best - 0.25) < 1e-6 && Math.abs(gain - lvl) < 1e-4 && Math.abs(y[Math.round(1.0 * sr)] - 0.5) < 1e-6 &&
+        Math.abs(rep.voice[0].start - 2.3) < 1e-9 && y.length === 4 * sr;
+      return { ok: ok, detail: 'stempiek op sample ' + found + ' (verwacht ' + expect + '); ducking midden in de zone ' + gain.toFixed(4) +
+        ' (verwacht ' + lvl.toFixed(4) + ' = 10^(' + duckDb + '/20)); zone ' + z.start.toFixed(3) + '–' + z.end.toFixed(3) + ' s' };
     });
 
     var ok = checks.every(function (c) { return c.ok; });
@@ -2076,7 +2397,7 @@ function draw() {
     g.fillStyle = '#1b1f26'; g.fillText(ms[m].name, mx2 + 4, 10);
   }
   // cursor
-  var ct = playPos();
+  var ct = (play && play.kind === 'src') ? playPos() : null;
   var cx = ct != null ? ct : v.cursor;
   var cxp = Math.round(t2x(cx)) + .5;
   if (cxp >= 0 && cxp <= CW) {
@@ -2412,179 +2733,820 @@ $('btnPlay').onclick = togglePlay;
 $('chkLoop').onchange = function () { if (play && play.kind === 'src') { var p = playPos(); startSrcPlay(p); } };
 $('chkLast2').onchange = function () { if (play && play.kind === 'src') startSrcPlay(null); };
 function renderProgress() {
-  document.querySelectorAll('.prog i').forEach(function (i) {
-    var w = 0;
-    if (play && play.kind === 'block' && i.dataset.b === play.block) w = clamp(playPos() / play.b, 0, 1) * 100;
-    i.style.width = w + '%';
+  document.querySelectorAll('.tlcur').forEach(function (c) {
+    var on = play && play.kind === 'block' && c.dataset.b === play.block;
+    if (!on) { c.style.display = 'none'; return; }
+    c.style.display = 'block'; c.style.left = (clamp(playPos() / parseFloat(c.dataset.total), 0, 1) * 100) + '%';
   });
 }
 
-/* ---------- blokken ---------- */
+/* ---------- blokken: hulp ---------- */
 function stat(name) { try { return AF.ratioStatus(name); } catch (e) { return ''; } }
 function idOf(r) { return typeof r === 'string' ? r : (r && (r.id || r.block || r.blockId)); }
 function blockById(id) { for (var i = 0; i < R.blocks.length; i++) if (R.blocks[i].id === id) return R.blocks[i]; return null; }
+function findBy(list, key, val) { list = list || []; for (var i = 0; i < list.length; i++) if (list[i][key] === val) return list[i]; return null; }
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function semi(r) { var s = 12 * Math.log(r) / Math.LN2; return (s >= 0 ? '+' : '') + s.toFixed(2); }
+function ratioBadge(ratio, st, mode) {
+  if (ratio == null || !isFinite(ratio)) return '';
+  st = st || stat(ratio);
+  var h = '<span class="badge ' + esc(st) + '">' + Number(ratio).toFixed(3) + (st === 'blocked' ? ' geblokkeerd' : '') + '</span>';
+  if (mode === 'varispeed') h += ' <span class="dim">' + semi(ratio) + ' ht</span>';
+  return h;
+}
+var pick = null;          // geselecteerd item {block, kind:'f'|'v'|'t', id}
+var blockMsg = {};        // blok-id -> foutmelding (zichtbaar op het blok)
+
+function setActiveBlock(id) {
+  if (activeBlock === id) return;
+  activeBlock = id;
+  document.querySelectorAll('.blk').forEach(function (x) {
+    var on = x.dataset.b === id; x.classList.toggle('active', on);
+    var rd = x.querySelector('input[type=radio]'); if (rd) rd.checked = on;
+  });
+  renderVoiceCtl();
+}
+function runB(blockId, cmd, args) {
+  delete blockMsg[blockId];
+  var r = run(cmd, args);
+  if (!r.ok) { blockMsg[blockId] = r.error; renderBlocks(); }
+  return r;
+}
+
 function newBlock() {
   var name = $('nbName').value.trim() || ('Blok ' + (R.blocks.length + 1));
   var d = parseFloat(String($('nbDur').value).replace(',', '.'));
   if (!(d > 0)) { say('Doelduur moet een positief aantal seconden zijn.', 'err'); return; }
   var r = run('create_block', { name: name, targetDuration: r3(d) });
-  if (r.ok) { var id = idOf(r.result); if (id) activeBlock = id; $('nbName').value = ''; refreshState(); renderBlocks(); say('Blok "' + name + '" aangemaakt.', 'ok'); }
+  if (r.ok) { var id = idOf(r.result); if (id) activeBlock = id; $('nbName').value = ''; refreshState(); renderBlocks(); renderVoiceCtl(); say('Blok "' + name + '" aangemaakt.', 'ok'); }
 }
 $('btnNewBlock').onclick = newBlock;
-function addSelectionToBlock() {
+function selectionCheck() {
   var v = V(), s = curSrc();
-  if (!s) { say('Geen bron gekozen.', 'warn'); return; }
-  if (!v.sel || v.sel.out - v.sel.in < 0.02) { say('Selectie moet minstens 20 ms zijn.', 'err'); return; }
-  if (!activeBlock || !blockById(activeBlock)) { say('Maak of kies eerst een blok.', 'warn'); return; }
-  var r = run('add_fragment', { block: activeBlock, source: s.name, in: v.sel.in, out: v.sel.out, snap: $('chkSnap').checked });
+  if (!s) { say('Geen bron gekozen.', 'warn'); return null; }
+  if (!v.sel || v.sel.out - v.sel.in < 0.02) { say('Selectie moet minstens 20 ms zijn.', 'err'); return null; }
+  if (!activeBlock || !blockById(activeBlock)) { say('Maak of kies eerst een blok.', 'warn'); return null; }
+  return { v: v, s: s };
+}
+function addSelectionToBlock() {
+  var c = selectionCheck(); if (!c) return;
+  var r = runB(activeBlock, 'add_fragment', { block: activeBlock, source: c.s.name, in: c.v.sel.in, out: c.v.sel.out, snap: $('chkSnap').checked });
   if (r.ok) {
     var res = r.result || {};
     say('Fragment toegevoegd' + (res.in != null ? ' (' + fmt(res.in) + ' - ' + fmt(res.out) + ')' : '') + '.', 'ok');
   }
 }
-$('btnToBlock').onclick = addSelectionToBlock;
-
-function parseFit(res) {
-  var info = { frags: {}, blocks: {} };
-  (function walk(o, depth) {
-    if (!o || typeof o !== 'object' || depth > 6) return;
-    if (Array.isArray(o)) { o.forEach(function (x) { walk(x, depth + 1); }); return; }
-    var fid = o.fragment || o.fragmentId || (o.ratio != null ? o.id : null);
-    if (fid && o.ratio != null) info.frags[fid] = o;
-    else if ((o.block || o.blockId || o.id) && (o.fragments || o.ok != null || o.fits != null || o.deviation != null || o.difference != null)) {
-      var bid = o.block || o.blockId || o.id; info.blocks[bid] = o;
-    }
-    for (var k in o) if (o[k] && typeof o[k] === 'object') walk(o[k], depth + 1);
-  })(res, 0);
-  return info;
+function addSelectionAsVoice() {
+  var c = selectionCheck(); if (!c) return;
+  var b = blockById(activeBlock);
+  if (!(b.fragments || []).length) { say('Het blok heeft nog geen muziekfragment om de stem aan te hangen; voeg eerst muziek toe (Enter).', 'warn'); return; }
+  var anchor = $('vAnchor').value;
+  if (!findBy(b.fragments, 'id', anchor)) anchor = b.fragments[0].id;
+  var off = parseFloat(String($('vOffset').value).replace(',', '.'));
+  if (!isFinite(off)) off = 0;
+  var r = runB(b.id, 'add_voice', { block: b.id, source: c.s.name, in: c.v.sel.in, out: c.v.sel.out, anchor: anchor, offset: r3(off), snap: $('chkSnap').checked });
+  if (r.ok) {
+    var res = r.result || {};
+    if (res.id) pick = { block: b.id, kind: 'v', id: res.id };
+    say('Stem ' + (res.id || '') + ' toegevoegd' + (res.in != null ? ' (' + fmt(res.in) + ' - ' + fmt(res.out) + ')' : '') + ' bij anker ' + anchor + '.', 'ok');
+    renderBlocks();
+  }
 }
+$('btnToBlock').onclick = addSelectionToBlock;
+$('btnToVoice').onclick = addSelectionAsVoice;
+function renderVoiceCtl() {
+  var sel = $('vAnchor'), prev = sel.value, b = blockById(activeBlock);
+  sel.innerHTML = '';
+  ((b && b.fragments) || []).forEach(function (f, i) {
+    var o = document.createElement('option'); o.value = f.id; o.textContent = (i + 1) + ' · ' + f.source; sel.appendChild(o);
+  });
+  if (prev && findBy(b && b.fragments, 'id', prev)) sel.value = prev;
+}
+
+/* ---------- fit-rapport en layout ---------- */
 function refreshFit() {
-  var key = JSON.stringify(R.blocks) + '|' + R.sampleRate;
+  var key = JSON.stringify(R.blocks) + '|' + R.sampleRate + '|' + R.sources.map(function (s) { return s.name + (hasAudio(s.name) ? '+' : '-'); }).join(',');
   if (key === fitKey) return;
   fitKey = key;
-  if (!R.blocks.length) { fitInfo = { frags: {}, blocks: {} }; return; }
-  var r = AF.exec({ cmd: 'fit_report', args: {} });
-  if (r.ok) fitInfo = parseFit(r.result); else fitInfo = { frags: {}, blocks: {} };
+  fitInfo = { blocks: {} };
+  if (R.blocks.length) {
+    var r = AF.exec({ cmd: 'fit_report', args: {} });
+    if (r.ok) {
+      var list = Array.isArray(r.result) ? r.result : (r.result && r.result.block ? [r.result] : []);
+      list.forEach(function (e) { if (e && e.block) fitInfo.blocks[e.block] = e; });
+    }
+  }
   renderBlocks();
 }
-function num(o, keys) { for (var i = 0; i < keys.length; i++) if (typeof o[keys[i]] === 'number') return o[keys[i]]; return null; }
+function num(o, keys) { for (var i = 0; i < keys.length; i++) if (o && typeof o[keys[i]] === 'number') return o[keys[i]]; return null; }
 
-function blockStatusText(b) {
-  var bi = fitInfo.blocks[b.id];
+// Normaliseert fit_report + recept tot tekenbare structuur (met terugval als start/end ontbreken).
+function layoutOf(b) {
+  var bi = fitInfo.blocks[b.id] || null;
+  var L = { bi: bi, frags: [], trans: [], voices: [], duck: [], overlaps: (bi && bi.overlaps) || [], total: b.targetDuration };
+  var fr = b.fragments || [], tr = b.transitions || [], cur = 0, i;
+  for (i = 0; i < fr.length; i++) {
+    var f = fr[i], fe = bi ? findBy(bi.fragments, 'id', f.id) : null, te0 = bi ? findBy(bi.transitions, 'index', i) : null;
+    var src = f.out - f.in, d = fe && fe.targetDuration != null ? fe.targetDuration : src;
+    var start = fe && fe.start != null ? fe.start : cur;
+    var end = fe && fe.end != null ? fe.end : start + d;
+    var ratio = fe && fe.ratio != null ? fe.ratio : null;
+    L.frags.push({ f: f, i: i, start: start, end: end, ratio: ratio, status: fe && fe.status ? fe.status : (ratio != null ? stat(ratio) : ''),
+      src: src, target: fe && fe.targetDuration != null ? fe.targetDuration : null, fe: fe });
+    var ov = 0, gp = 0;
+    if (te0) { ov = te0.overlap != null ? te0.overlap : ((te0.type === 'gap' || te0.type === 'cut') ? 0 : (te0.end != null && te0.start != null ? te0.end - te0.start : 0)); gp = te0.gap || 0; }
+    cur = end - ov + gp;
+  }
+  for (i = 0; i < tr.length && i < fr.length - 1; i++) {
+    var t = tr[i], te = bi ? findBy(bi.transitions, 'index', i) : null, A = L.frags[i], B = L.frags[i + 1];
+    var type = t.type, z0, z1;
+    if (te && te.start != null && te.end != null) { z0 = te.start; z1 = te.end; }
+    else if (type === 'gap') { z0 = A.end; z1 = B.start; }
+    else if (type === 'cut') { z0 = z1 = B.start; }
+    else { z0 = B.start; z1 = A.end; }
+    L.trans.push({ i: i, t: t, type: type, ms: t.ms || 0, start: Math.min(z0, z1), end: Math.max(z0, z1), te: te });
+  }
+  var vo = b.voice || [];
+  vo.forEach(function (v) {
+    var ve = bi ? findBy(bi.voice, 'id', v.id) : null, an = findBy(L.frags, 'i', fr.indexOf(findBy(fr, 'id', v.anchor)));
+    var aStart = an ? an.start : 0;
+    var st = ve && ve.start != null ? ve.start : aStart + (v.offset || 0);
+    var dd = ve && ve.targetDuration != null ? ve.targetDuration : (v.targetDuration != null ? v.targetDuration : v.out - v.in);
+    var en = ve && ve.end != null ? ve.end : st + dd;
+    var ratio = ve && ve.ratio != null ? ve.ratio : null;
+    L.voices.push({ v: v, start: st, end: en, aStart: aStart, anchorOk: !!an, ratio: ratio, status: ve && ve.status ? ve.status : (ratio != null ? stat(ratio) : ''), ve: ve });
+  });
+  if (bi && Array.isArray(bi.duck)) L.duck = bi.duck.map(function (z) { return { start: z.start, end: z.end }; });
+  else if (b.duckDb && L.voices.length) {
+    var zs = L.voices.map(function (x) { return [Math.max(0, x.start - (b.duckMs || 150) / 1000), x.end + (b.duckMs || 150) / 1000]; }).sort(function (a, c) { return a[0] - c[0]; }), out = [];
+    zs.forEach(function (z) { var l = out[out.length - 1]; if (l && z[0] <= l.end) l.end = Math.max(l.end, z[1]); else out.push({ start: z[0], end: z[1] }); });
+    L.duck = out;
+  }
+  L.total = Math.max(b.targetDuration, L.frags.length ? L.frags[L.frags.length - 1].end : 0);
+  L.frags.forEach(function (x) { L.total = Math.max(L.total, x.end); });
+  L.voices.forEach(function (x) { L.total = Math.max(L.total, x.end); });
+  if (!(L.total > 0)) L.total = 1;
+  return L;
+}
+
+function blockStatusText(b, L) {
+  var bi = L.bi;
   if (!bi) return '';
-  var diff = num(bi, ['difference', 'deviation', 'diff', 'delta', 'deviationSeconds']);
-  if (bi.ok === true || bi.fits === true || (diff != null && Math.abs(diff) < 0.0005)) return '<span class="badge green">klopt</span>';
-  if (diff != null) return '<span class="badge ' + (diff < 0 ? 'red' : 'orange') + '">' + (diff < 0 ? '' : '+') + diff.toFixed(3) + ' s afwijking</span>';
-  if (bi.ok === false || bi.fits === false) return '<span class="badge orange">wijkt af</span>';
+  if (bi.ok === false && bi.error) return '<span class="badge red" title="' + esc(bi.error) + '">fit onmogelijk</span>';
+  var dev = typeof bi.deviation === 'number' ? bi.deviation : null;
+  if (dev != null && Math.abs(dev) < 0.0005) return '<span class="badge green">klopt</span>';
+  if (dev != null) return '<span class="badge ' + (dev > 0 ? 'red' : 'orange') + '">' + (dev > 0 ? '+' : '') + dev.toFixed(3) + ' s ' + (dev > 0 ? 'te lang' : 'te kort') + '</span>';
   return '';
 }
+
+/* ---------- tijdlijn ---------- */
+function pc(t, total) { return (t / total * 100).toFixed(4) + '%'; }
+function tlHTML(b, L) {
+  var T = L.total, h = '<div class="tl" data-b="' + b.id + '" data-total="' + T + '">';
+  // liniaal
+  var steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300], step = 600, w = 700;
+  for (var s = 0; s < steps.length; s++) if (steps[s] / T * w >= 60) { step = steps[s]; break; }
+  h += '<div class="ruler">';
+  for (var t = 0; t <= T + 1e-9; t += step) h += '<span style="left:' + pc(t, T) + '">' + (step < 1 ? t.toFixed(1) : Math.round(t)) + ' s</span>';
+  h += '</div>';
+  // muziekrij
+  h += '<div class="row music">';
+  L.duck.forEach(function (z) { h += '<div class="duckz" style="left:' + pc(z.start, T) + ';width:' + pc(z.end - z.start, T) + '" title="ducking ' + (b.duckDb != null ? b.duckDb : -6) + ' dB"></div>'; });
+  L.frags.forEach(function (x) {
+    var f = x.f, miss = !hasAudio(f.source), sl = pick && pick.block === b.id && pick.kind === 'f' && pick.id === f.id;
+    var rt = x.ratio != null ? '×' + x.ratio.toFixed(2) + (f.mode === 'varispeed' ? ' ' + semi(x.ratio) + ' ht' : '') : '';
+    h += '<div class="tfr ' + esc(x.status) + (sl ? ' sel' : '') + (miss ? ' miss' : '') + (f.locked ? ' lck' : '') + '" data-f="' + f.id + '" style="left:' + pc(x.start, T) + ';width:' + pc(x.end - x.start, T) + '" title="' +
+      esc((x.i + 1) + '. ' + f.source + ' ' + fmt(f.in) + ' - ' + fmt(f.out) + (f.locked ? ' (vergrendeld)' : '') + (miss ? ' - bron niet geladen' : '') + (x.ratio != null ? ' ratio ' + x.ratio.toFixed(3) : '')) + '">' +
+      (f.locked ? '🔒 ' : '') + esc((x.i + 1) + ' · ' + f.source) + '<span class="rt">' + rt + '</span></div>';
+  });
+  L.trans.forEach(function (z) {
+    var sl = pick && pick.block === b.id && pick.kind === 't' && pick.id === z.i;
+    var cls = z.type === 'gap' ? 'gap' : (z.type === 'cut' ? 'cut' : 'ov');
+    var handles = (cls === 'cut') ? '' : '<i class="h l"></i><i class="h r"></i>';
+    var wd = z.end - z.start;
+    var st = cls === 'cut' ? 'left:calc(' + pc(z.start, T) + ' - 5px);width:10px' : 'left:' + pc(z.start, T) + ';width:max(12px,' + pc(wd, T) + ')';
+    h += '<div class="tz ' + cls + ' ' + z.type + (sl ? ' sel' : '') + '" data-t="' + z.i + '" style="' + st + '" title="' + esc(z.type + (cls === 'cut' ? '' : ' ' + z.ms + ' ms') + (z.t.curve ? ', ' + z.t.curve : '') + ' - klik voor instellingen, rand slepen wijzigt de duur') + '">' +
+      handles + '<span>' + (cls === 'cut' ? '' : esc(z.type.replace(/_/g, ' '))) + '</span></div>';
+  });
+  if (b.targetDuration < T - 1e-6) h += '<div class="endline" style="left:' + pc(b.targetDuration, T) + '" title="einde doelduur"></div>';
+  h += '<div class="dropline" style="display:none"></div><div class="tlcur" data-b="' + b.id + '" data-total="' + T + '"></div></div>';
+  // stemrij
+  h += '<div class="row voice">';
+  if (!L.voices.length) h += '<div class="hint">stemrij: maak een selectie en druk Shift+Enter (&rarr; stem)</div>';
+  L.voices.forEach(function (x) {
+    var v = x.v, sl = pick && pick.block === b.id && pick.kind === 'v' && pick.id === v.id;
+    var ovl = L.overlaps.some(function (o) { return !o.accepted && (o.a === v.id || o.b === v.id); });
+    var lo = Math.min(x.aStart, x.start), wd = Math.abs(x.start - x.aStart);
+    h += '<div class="ancl" style="left:' + pc(lo, T) + ';width:' + pc(wd, T) + '"><b></b></div>';
+    var rt = x.ratio != null && v.targetDuration != null ? '×' + x.ratio.toFixed(2) + (v.mode === 'varispeed' ? ' ' + semi(x.ratio) + ' ht' : '') : '';
+    h += '<div class="tvo ' + esc(x.status) + (sl ? ' sel' : '') + (ovl ? ' ovl' : '') + '" data-v="' + v.id + '" style="left:' + pc(x.start, T) + ';width:' + pc(x.end - x.start, T) + '" title="' +
+      esc(v.id + ' · ' + v.source + ' ' + fmt(v.in) + ' - ' + fmt(v.out) + ' · anker ' + v.anchor + ' offset ' + (v.offset || 0).toFixed(3) + ' s') + '">' + esc(v.id + ' · ' + v.source) + '<span class="rt">' + rt + '</span></div>';
+  });
+  h += '<div class="tlcur" data-b="' + b.id + '" data-total="' + T + '"></div></div>';
+  return h + '</div>';
+}
+
+function tlGeom(el) { var tl = el.closest('.tl'); return { tl: tl, pps: tl.clientWidth / parseFloat(tl.dataset.total) }; }
+function listen(move, up) {
+  function u(e) { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', u); up(e); }
+  window.addEventListener('mousemove', move); window.addEventListener('mouseup', u);
+}
+function wireTimeline(root, b, L) {
+  // muziekfragmenten: slepen = herordenen, klik = selecteren
+  root.querySelectorAll('.tfr').forEach(function (el) {
+    var x = L.frags.filter(function (q) { return q.f.id === el.dataset.f; })[0];
+    el.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return; e.preventDefault();
+      var g = tlGeom(el), x0 = e.clientX, moved = false, pos = x.i;
+      var others = L.frags.filter(function (q) { return q !== x; }), line = g.tl.querySelector('.dropline');
+      listen(function (ev) {
+        var dx = ev.clientX - x0;
+        if (!moved && Math.abs(dx) < 4) return;
+        moved = true; el.classList.add('dragging'); el.style.transform = 'translateX(' + dx + 'px)';
+        var cT = (x.start + x.end) / 2 + dx / g.pps; pos = 0;
+        others.forEach(function (o) { if ((o.start + o.end) / 2 < cT) pos++; });
+        var lt = pos < others.length ? others[pos].start : (others.length ? others[others.length - 1].end : 0);
+        line.style.display = 'block'; line.style.left = pc(lt, parseFloat(g.tl.dataset.total));
+      }, function () {
+        if (!moved) { pick = { block: b.id, kind: 'f', id: x.f.id }; setActiveBlock(b.id); renderBlocks(); return; }
+        if (pos !== x.i) { var r = runB(b.id, 'move_fragment', { fragment: x.f.id, position: pos }); if (r.ok) say('Fragment verplaatst naar positie ' + (pos + 1) + '.', 'ok'); }
+        else renderBlocks();
+      });
+    });
+  });
+  // overgangen: klik = selecteren, rand slepen = ms
+  root.querySelectorAll('.tz').forEach(function (el) {
+    var z = findBy(L.trans, 'i', +el.dataset.t);
+    function begin(e, side) {
+      if (e.button !== 0) return; e.preventDefault(); e.stopPropagation();
+      var g = tlGeom(el), x0 = e.clientX, moved = false, ms = z.ms, ms0 = z.ms;
+      var left0 = el.offsetLeft, w0 = el.offsetWidth, lab = el.querySelector('span');
+      listen(function (ev) {
+        if (!side) return;
+        var dx = ev.clientX - x0;
+        if (!moved && Math.abs(dx) < 3) return;
+        moved = true;
+        ms = Math.max(0, Math.round(ms0 + (side === 'r' ? 1 : -1) * dx / g.pps * 1000));
+        var dpx = (ms - ms0) / 1000 * g.pps;
+        el.style.width = Math.max(12, w0 + dpx) + 'px';
+        if (side === 'l') el.style.left = (left0 - dpx) + 'px';
+        lab.textContent = ms + ' ms';
+      }, function () {
+        if (moved && ms !== ms0) { var r = runB(b.id, 'set_transition', { block: b.id, index: z.i, type: z.type, ms: ms }); if (r.ok) say('Overgang ' + (z.i + 1) + ': ' + ms + ' ms.', 'ok'); }
+        else if (moved) renderBlocks();
+        else { pick = { block: b.id, kind: 't', id: z.i }; setActiveBlock(b.id); renderBlocks(); }
+      });
+    }
+    el.addEventListener('mousedown', function (e) { begin(e, null); });
+    var hl = el.querySelector('.h.l'), hr = el.querySelector('.h.r');
+    if (hl) hl.addEventListener('mousedown', function (e) { begin(e, 'l'); });
+    if (hr) hr.addEventListener('mousedown', function (e) { begin(e, 'r'); });
+  });
+  // stemfragmenten: slepen = offset (en anker), klik = selecteren
+  root.querySelectorAll('.tvo').forEach(function (el) {
+    var x = L.voices.filter(function (q) { return q.v.id === el.dataset.v; })[0];
+    el.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return; e.preventDefault();
+      var g = tlGeom(el), x0 = e.clientX, moved = false, ns = x.start, anc = null;
+      var musicEls = g.tl.querySelectorAll('.tfr');
+      function anchorAt(t) {
+        var best = null;
+        L.frags.forEach(function (q) { if (q.start <= t + 1e-9 && (!best || q.start >= best.start)) best = q; });
+        return best || L.frags[0];
+      }
+      listen(function (ev) {
+        var dx = ev.clientX - x0;
+        if (!moved && Math.abs(dx) < 4) return;
+        moved = true; el.classList.add('dragging');
+        ns = Math.max(0, x.start + dx / g.pps);
+        el.style.transform = 'translateX(' + ((ns - x.start) * g.pps) + 'px)';
+        anc = anchorAt(ns);
+        musicEls.forEach(function (m) { m.classList.toggle('anc', !!anc && m.dataset.f === anc.f.id); });
+      }, function () {
+        if (!moved) { pick = { block: b.id, kind: 'v', id: x.v.id }; setActiveBlock(b.id); renderBlocks(); return; }
+        var args = { voice: x.v.id, offset: r3(ns - anc.start) };
+        if (anc.f.id !== x.v.anchor) args.anchor = anc.f.id;
+        var r = runB(b.id, 'update_voice', args);
+        if (r.ok) say('Stem ' + x.v.id + ': offset ' + args.offset.toFixed(3) + ' s' + (args.anchor ? ', anker ' + args.anchor : '') + '.', 'ok');
+      });
+    });
+  });
+}
+
+/* ---------- detailpaneel ---------- */
+function fld(k, label, val, w, extra) {
+  return '<label class="df">' + label + ' <input type="text" data-k="' + k + '" value="' + esc(val == null ? '' : val) + '" style="width:' + (w || 60) + 'px"' + (extra || '') + '></label>';
+}
+function selHTML(k, label, opts, val) {
+  return '<label class="df">' + label + ' <select data-k="' + k + '">' + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === val ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></label>';
+}
+function detailHTML(b, L) {
+  if (!pick || pick.block !== b.id) return '';
+  var h = '<div class="detail">';
+  if (pick.kind === 'f') {
+    var x = L.frags.filter(function (q) { return q.f.id === pick.id; })[0]; if (!x) return '';
+    var f = x.f, manual = b.fitMode === 'manual';
+    h += '<b>Muziekfragment ' + (x.i + 1) + ' · ' + esc(f.source) + '</b> ' + ratioBadge(x.ratio, x.status, f.mode) +
+      ' <span class="dim">' + fmt(f.in) + ' - ' + fmt(f.out) + ', brondur ' + x.src.toFixed(3) + ' s' + (x.target != null ? ', doeldur ' + x.target.toFixed(3) + ' s' : '') + '</span><div class="drow">' +
+      '<label class="df"><input type="checkbox" data-k="locked"' + (f.locked ? ' checked' : '') + '> vergrendeld</label>' +
+      fld('manualDuration', 'handmatige duur (s)', f.manualDuration != null ? f.manualDuration : '', 70, manual && !f.locked ? '' : ' disabled title="Alleen in fit-modus handmatig en niet vergrendeld"') +
+      fld('gainDb', 'gain (dB)', f.gainDb != null ? f.gainDb : 0, 50) + fld('fadeInMs', 'fade in (ms)', f.fadeInMs, 50) + fld('fadeOutMs', 'fade uit (ms)', f.fadeOutMs, 50) +
+      selHTML('preset', 'preset', [['music', 'music'], ['voice', 'voice']], f.preset || 'music') + selHTML('mode', 'modus', [['pitch', 'pitch'], ['varispeed', 'varispeed']], f.mode || 'pitch') + '</div>' +
+      '<div class="drow"><button class="abo" title="Bronfragment in oorspronkelijke snelheid">&#9654; Origineel (A)</button> ' +
+      '<button class="abg" data-key="' + b.id + '#ab" data-ref="ab' + f.id + '" data-base="&#9654; Gefit (B)">&#9654; Gefit (B)</button> <button class="dup">&#10697; Dupliceren</button> <button class="del2">&times; Verwijderen</button></div>';
+  } else if (pick.kind === 'v') {
+    var y = L.voices.filter(function (q) { return q.v.id === pick.id; })[0]; if (!y) return '';
+    var v = y.v;
+    var warn = v.targetDuration != null && (y.status === 'red' || y.status === 'blocked') ? '<div class="warnbox">&#9888; Stem duidelijk hoorbaar ' + (y.ratio > 1 ? 'versneld' : 'vertraagd') + ' (ratio ' + y.ratio.toFixed(3) + ').</div>' : '';
+    h += '<b>Stem ' + esc(v.id) + ' · ' + esc(v.source) + '</b> ' + ratioBadge(y.ratio, y.status, v.mode) +
+      ' <span class="dim">' + fmt(v.in) + ' - ' + fmt(v.out) + ', in blok ' + y.start.toFixed(3) + ' - ' + y.end.toFixed(3) + ' s</span>' + warn + '<div class="drow">' +
+      selHTML('anchor', 'anker', (b.fragments || []).map(function (q, i) { return [q.id, (i + 1) + ' · ' + q.source]; }), v.anchor) +
+      fld('offset', 'offset (s)', (v.offset || 0).toFixed(3), 60) + fld('targetDuration', 'doelduur (s, leeg = origineel)', v.targetDuration != null ? v.targetDuration : '', 70) +
+      fld('gainDb', 'gain (dB)', v.gainDb != null ? v.gainDb : 0, 50) + fld('fadeInMs', 'fade in (ms)', v.fadeInMs, 50) + fld('fadeOutMs', 'fade uit (ms)', v.fadeOutMs, 50) +
+      selHTML('preset', 'preset', [['voice', 'voice'], ['music', 'music']], v.preset || 'voice') + selHTML('mode', 'modus', [['pitch', 'pitch'], ['varispeed', 'varispeed']], v.mode || 'pitch') +
+      '<label class="df"><input type="checkbox" data-k="acceptOverlap"' + (v.acceptOverlap ? ' checked' : '') + '> overlap geaccepteerd</label></div>' +
+      '<div class="drow"><button class="abo">&#9654; Origineel (A)</button> <button class="abg" data-key="' + b.id + '" data-ref="vg' + v.id + '" data-base="&#9654; In blok (B)">&#9654; In blok (B)</button> ' +
+      '<button class="opn">&#8599; Open in golfvorm</button> <button class="del2">&times; Verwijderen</button></div>';
+  } else {
+    var z = findBy(L.trans, 'i', pick.id); if (!z) return '';
+    var t = z.t, types = ['cut', 'gap', 'crossfade', 'fade_out_a', 'fade_in_b', 'duck', 'mix'];
+    h += '<b>Overgang ' + (z.i + 1) + ' · ' + esc(b.fragments[z.i].source) + ' &rarr; ' + esc(b.fragments[z.i + 1].source) + '</b> <span class="dim">' +
+      (z.te && z.te.effectiveMs != null && Math.abs(z.te.effectiveMs - z.ms) > 0.5 ? 'effectief ' + z.te.effectiveMs.toFixed(0) + ' ms (ingekort)' : '') + '</span><div class="drow">' +
+      selHTML('type', 'type', types.map(function (q) { return [q, q.replace(/_/g, ' ')]; }), z.type) +
+      (z.type !== 'cut' ? fld('ms', z.type === 'gap' ? 'stilte (ms)' : 'overlap (ms)', z.ms, 60) : '') +
+      (z.type !== 'cut' && z.type !== 'gap' ? selHTML('curve', 'curve', [['equal_power', 'equal power'], ['linear', 'linear']], t.curve || 'equal_power') : '') +
+      (z.type === 'duck' ? fld('duckDb', 'duck (dB)', t.duckDb != null ? t.duckDb : -12, 50) : '') + '</div>' +
+      '<div class="drow"><button class="abg" data-key="' + b.id + '" data-ref="t' + z.i + '" data-base="&#9654; Overgang beluisteren (2 s ervoor tot 2 s erna)">&#9654; Overgang beluisteren (2 s ervoor tot 2 s erna)</button></div>';
+  }
+  return h + '</div>';
+}
+function parseNum(s) { s = String(s).trim().replace(',', '.'); return s === '' ? null : (isFinite(+s) ? +s : NaN); }
+var NULLABLE = { manualDuration: 1, targetDuration: 1 };
+var NUMERIC = { manualDuration: 1, targetDuration: 1, gainDb: 1, fadeInMs: 1, fadeOutMs: 1, offset: 1, ms: 1, duckDb: 1 };
+function wireDetail(root, b, L) {
+  var d = root.querySelector('.detail'); if (!d || !pick) return;
+  d.querySelectorAll('[data-k]').forEach(function (inp) {
+    inp.addEventListener('change', function () {
+      var k = inp.dataset.k, val;
+      if (inp.type === 'checkbox') val = inp.checked;
+      else if (NUMERIC[k]) {
+        val = parseNum(inp.value);
+        if (val === null && !NULLABLE[k]) val = NaN;
+        if (typeof val === 'number' && isNaN(val)) { say('Ongeldig getal bij ' + k + '.', 'err'); renderBlocks(); return; }
+      } else val = inp.value;
+      var cmd, args;
+      if (pick.kind === 'f') { cmd = 'update_fragment'; args = { fragment: pick.id }; args[k] = val; }
+      else if (pick.kind === 'v') { cmd = 'update_voice'; args = { voice: pick.id }; args[k] = val; }
+      else {
+        var z = findBy(L.trans, 'i', pick.id);
+        cmd = 'set_transition'; args = { block: b.id, index: pick.id, type: z.type };
+        if (k === 'type') args.type = val; else args[k] = val;
+      }
+      var r = runB(b.id, cmd, args); if (!r.ok) renderBlocks();
+    });
+  });
+  var q = function (s) { return d.querySelector(s); };
+  if (pick.kind === 'f') {
+    var x = L.frags.filter(function (z) { return z.f.id === pick.id; })[0], f = x.f;
+    q('.abo').onclick = function () { playOriginal(f.source, f.in, f.out); };
+    q('.abg').onclick = function () { playFitted(b, x); };
+    q('.dup').onclick = function () { var r = runB(b.id, 'duplicate_fragment', { fragment: f.id }); if (r.ok) say('Fragment gedupliceerd.', 'ok'); };
+    q('.del2').onclick = function () { deleteFragment(b, f.id); };
+  } else if (pick.kind === 'v') {
+    var y = L.voices.filter(function (z) { return z.v.id === pick.id; })[0], v = y.v;
+    q('.abo').onclick = function () { playOriginal(v.source, v.in, v.out); };
+    q('.abg').onclick = function () { playBlockRange(b, y.start - 0.5, y.end + 0.5, 'vg' + v.id); };
+    q('.opn').onclick = function () { openInWave(v.source, v.in, v.out); };
+    q('.del2').onclick = function () { runB(b.id, 'delete_voice', { voice: v.id }); };
+  } else {
+    var zt = findBy(L.trans, 'i', pick.id);
+    q('.abg').onclick = function () { playBlockRange(b, zt.start - 2, zt.end + 2, 't' + zt.i); };
+  }
+}
+function deleteFragment(b, fid) {
+  var r = runB(b.id, 'delete_fragment', { fragment: fid });
+  if (r.ok) { if (pick && pick.id === fid) pick = null; renderBlocks(); }
+}
+function openInWave(source, a, bb) {
+  if (!src(source)) { say('Bron ' + source + ' bestaat niet.', 'err'); return; }
+  setActive(source);
+  var v = view(source); v.sel = { in: a, out: bb };
+  var vd = CW / v.pps; if (a < v.viewStart || bb > v.viewStart + vd) { v.viewStart = a - vd * 0.1; clampView(v); }
+  renderFields(); draw();
+}
+
+/* ---------- blokweergave ---------- */
 function renderBlocks() {
   var box = $('blocklist');
   var keepScroll = box.parentNode.scrollTop;
   box.innerHTML = '';
+  if (pick && (!blockById(pick.block))) pick = null;
   if (!R.blocks.length) { box.innerHTML = '<div class="dim">Nog geen blokken. Geef een naam en doelduur en kies "+ nieuw blok".</div>'; return; }
   R.blocks.forEach(function (b) {
-    var el = document.createElement('div'); el.className = 'blk' + (b.id === activeBlock ? ' active' : '');
+    var L = layoutOf(b), bi = L.bi, frs = b.fragments || [], vos = b.voice || [];
+    var el = document.createElement('div'); el.className = 'blk' + (b.id === activeBlock ? ' active' : ''); el.dataset.b = b.id;
     var h = '<div class="bh"><label class="chk" title="Actief blok"><input type="radio" name="ab"' + (b.id === activeBlock ? ' checked' : '') + '> actief</label>' +
       '<input type="text" class="nm" value="' + esc(b.name) + '">' +
       '<input type="text" class="td" value="' + Number(b.targetDuration).toFixed(3) + '"><span class="dim">s</span>' +
       '<select class="fm"><option value="proportional">proportioneel</option><option value="manual">handmatig</option></select>' +
-      blockStatusText(b) +
-      '<span style="flex:1"></span><button class="pv">&#9654; Voorbeluister</button><button class="wv">WAV</button><button class="del">Blok verwijderen</button></div>';
-    var frs = b.fragments || [];
-    h += '<div class="prog"><i data-b="' + b.id + '"></i></div>';
+      blockStatusText(b, L) +
+      '<label class="chk" title="Muziek zakt tijdens stemfragmenten naar duckDb (0 = uit)">duck <input type="text" class="dk" value="' + (b.duckDb != null ? b.duckDb : -6) + '" style="width:44px;text-align:right"> dB ' +
+      '<input type="text" class="dm" value="' + (b.duckMs != null ? b.duckMs : 150) + '" style="width:44px;text-align:right"> ms</label>' +
+      '<span style="flex:1"></span><button class="pv" data-key="' + b.id + '" data-ref="pv" data-base="&#9654; Voorbeluister">&#9654; Voorbeluister</button>' +
+      '<button class="wv" data-key="' + b.id + '" data-ref="wav" data-base="WAV">WAV</button><button class="del">Blok verwijderen</button></div>';
+    h += '<div class="rprog" data-b="' + b.id + '" style="display:none"><div class="bar"><i></i></div><span class="pct"></span><span class="lab"></span><button class="cnl" title="Render annuleren">Annuleer</button></div>';
+    if (blockMsg[b.id]) h += '<div class="errbox" data-msg="1">&#9888; ' + esc(blockMsg[b.id]) + ' <button class="x">&times;</button></div>';
+    var unacc = L.overlaps.filter(function (o) { return !o.accepted; });
+    unacc.forEach(function (o) {
+      h += '<div class="warnbox ovw">&#9888; Stemfragmenten ' + esc(o.a) + ' en ' + esc(o.b) + ' overlappen ' + Number(o.duration).toFixed(3) + ' s. <button class="acc" data-a="' + esc(o.a) + '" data-bb="' + esc(o.b) + '">Accepteren</button></div>';
+    });
+    var wl = ((bi && bi.warnings) || []).filter(function (w) { return !(unacc.length && /overlap/i.test(w)); });
+    if (wl.length) h += '<div class="wlist">' + wl.map(function (w) { return '<div>&#9888; ' + esc(w) + '</div>'; }).join('') + '</div>';
     if (frs.length) {
-      h += '<div class="seg">';
-      frs.forEach(function (f) {
-        var fi = fitInfo.frags[f.id] || {}, tg = num(fi, ['targetDuration', 'doeldur', 'outDuration', 'target', 'targetDur']) || (f.out - f.in);
-        var st = fi.status || (fi.ratio != null ? stat(fi.ratio) : '');
-        h += '<div class="' + esc(st) + '" style="flex:' + Math.max(0.01, tg) + '" title="' + esc(f.source) + '">' + esc(f.source) + '</div>';
-      });
-      h += '</div>';
-      h += '<table class="fr"><tr><th>#</th><th>Bron</th><th>In</th><th>Uit</th><th>Brondur</th><th>Doeldur</th><th>Ratio</th><th>Preset</th><th>Modus</th><th></th></tr>';
-      frs.forEach(function (f, i) {
-        var fi = fitInfo.frags[f.id] || {};
-        var tg = num(fi, ['targetDuration', 'doeldur', 'outDuration', 'target', 'targetDur']);
-        var ratio = fi.ratio, st = fi.status || (ratio != null ? stat(ratio) : '');
-        var missing = !hasAudio(f.source);
-        var rt = '';
-        if (ratio != null) {
-          rt = '<span class="badge ' + esc(st) + '">' + Number(ratio).toFixed(3) + (st === 'blocked' ? ' geblokkeerd' : '') + '</span>';
-          if (f.mode === 'varispeed') rt += ' <span class="dim">' + (12 * Math.log(ratio) / Math.LN2).toFixed(2) + ' ht</span>';
-        }
-        h += '<tr data-f="' + f.id + '"' + (missing ? ' class="miss" title="Bron niet geladen"' : '') + '><td>' + (i + 1) + '</td><td>' + esc(f.source) + (missing ? ' (niet geladen)' : '') + '</td><td>' + fmt(f.in) + '</td><td>' + fmt(f.out) + '</td><td>' + (f.out - f.in).toFixed(3) + ' s</td><td>' + (tg != null ? tg.toFixed(3) + ' s' : '') + '</td><td>' + rt + '</td>' +
+      h += tlHTML(b, L);
+      h += '<table class="fr"><tr><th></th><th>#</th><th>Bron</th><th>In</th><th>Uit</th><th>Brondur</th><th>Doeldur</th><th>Ratio</th><th>Preset</th><th>Modus</th><th></th></tr>';
+      L.frags.forEach(function (x) {
+        var f = x.f, missing = !hasAudio(f.source), sl = pick && pick.block === b.id && pick.kind === 'f' && pick.id === f.id;
+        h += '<tr data-f="' + f.id + '" class="' + (missing ? 'miss ' : '') + (sl ? 'sel' : '') + '"' + (missing ? ' title="Bron niet geladen"' : '') + '><td class="grip" draggable="true" title="Sleep om te herordenen">&#10303;</td><td>' + (x.i + 1) + '</td><td>' + esc(f.source) + (missing ? ' (niet geladen)' : '') +
+          '</td><td>' + fmt(f.in) + '</td><td>' + fmt(f.out) + '</td><td>' + x.src.toFixed(3) + ' s</td><td>' + (x.target != null ? x.target.toFixed(3) + ' s' : '') + '</td><td>' + ratioBadge(x.ratio, x.status, f.mode) + '</td>' +
           '<td><select class="pr"><option value="music">music</option><option value="voice">voice</option></select></td>' +
           '<td><select class="md"><option value="pitch">pitch</option><option value="varispeed">varispeed</option></select></td>' +
-          '<td><button class="op" title="Open in golfvorm">&#8599;</button> <button class="df" title="Verwijderen">&times;</button></td></tr>';
+          '<td><button class="op" title="Open in golfvorm">&#8599;</button> <button class="dp" title="Dupliceren">&#10697;</button> <button class="df" title="Verwijderen">&times;</button></td></tr>';
       });
       h += '</table>';
     } else h += '<div class="dim" style="margin:4px 0">Leeg blok: maak een selectie en druk Enter.</div>';
+    if (vos.length) {
+      h += '<table class="fr vt"><tr><th>Stem</th><th>Bron</th><th>In</th><th>Uit</th><th>Anker</th><th>Offset</th><th>In blok</th><th>Ratio</th><th></th></tr>';
+      L.voices.forEach(function (y) {
+        var v = y.v, sl = pick && pick.block === b.id && pick.kind === 'v' && pick.id === v.id, missing = !hasAudio(v.source);
+        var ai = frs.indexOf(findBy(frs, 'id', v.anchor));
+        h += '<tr data-v="' + v.id + '" class="' + (missing ? 'miss ' : '') + (sl ? 'sel' : '') + '"><td>' + esc(v.id) + '</td><td>' + esc(v.source) + (missing ? ' (niet geladen)' : '') + '</td><td>' + fmt(v.in) + '</td><td>' + fmt(v.out) + '</td><td>' + (ai >= 0 ? (ai + 1) + ' · ' : '') + esc(v.anchor) + '</td><td>' +
+          (v.offset || 0).toFixed(3) + ' s</td><td>' + y.start.toFixed(3) + ' - ' + y.end.toFixed(3) + ' s</td><td>' + (v.targetDuration != null ? ratioBadge(y.ratio, y.status, v.mode) : '<span class="dim">origineel</span>') +
+          (v.targetDuration != null && (y.status === 'red' || y.status === 'blocked') ? ' <span class="badge orange" title="Stem duidelijk hoorbaar versneld/vertraagd">&#9888;</span>' : '') + '</td>' +
+          '<td><button class="vop" title="Open in golfvorm">&#8599;</button> <button class="vdf" title="Verwijderen">&times;</button></td></tr>';
+      });
+      h += '</table>';
+    }
+    h += detailHTML(b, L);
     el.innerHTML = h;
-    // handlers
-    el.addEventListener('mousedown', function () { if (activeBlock !== b.id) { activeBlock = b.id; document.querySelectorAll('.blk').forEach(function (x) { x.classList.remove('active'); }); el.classList.add('active'); el.querySelector('input[type=radio]').checked = true; } });
+    // --- handlers
+    el.addEventListener('mousedown', function () { setActiveBlock(b.id); });
     el.querySelector('.fm').value = b.fitMode || 'proportional';
-    el.querySelector('.fm').onchange = function (e) { run('update_block', { block: b.id, fitMode: e.target.value }); };
-    var nm = el.querySelector('.nm'); nm.onchange = function () { var r = run('update_block', { block: b.id, name: nm.value }); if (!r.ok) renderBlocks(); };
+    el.querySelector('.fm').onchange = function (e) { runB(b.id, 'update_block', { block: b.id, fitMode: e.target.value }); };
+    var nm = el.querySelector('.nm'); nm.onchange = function () { var r = runB(b.id, 'update_block', { block: b.id, name: nm.value }); if (!r.ok) renderBlocks(); };
     var td = el.querySelector('.td'); td.onchange = function () {
       var d = parseFloat(String(td.value).replace(',', '.'));
       if (!(d > 0)) { say('Doelduur moet positief zijn.', 'err'); renderBlocks(); return; }
-      var r = run('update_block', { block: b.id, targetDuration: r3(d) }); if (!r.ok) renderBlocks();
+      var r = runB(b.id, 'update_block', { block: b.id, targetDuration: r3(d) }); if (!r.ok) renderBlocks();
     };
+    ['dk', 'dm'].forEach(function (c) {
+      var inp = el.querySelector('.' + c);
+      inp.onchange = function () {
+        var n = parseNum(inp.value);
+        if (n == null || isNaN(n)) { say('Ongeldig getal voor ducking.', 'err'); renderBlocks(); return; }
+        var a = { block: b.id }; a[c === 'dk' ? 'duckDb' : 'duckMs'] = n;
+        var r = runB(b.id, 'update_block', a); if (!r.ok) renderBlocks();
+      };
+    });
     el.querySelector('.del').onclick = function () { if (confirm('Blok "' + b.name + '" verwijderen?')) { if (activeBlock === b.id) activeBlock = null; run('delete_block', { block: b.id }); } };
     el.querySelector('.pv').onclick = function () { previewBlock(b); };
     el.querySelector('.wv').onclick = function () { exportBlock(b); };
-    el.querySelectorAll('tr[data-f]').forEach(function (tr) {
-      var fid = tr.dataset.f, f = (b.fragments || []).filter(function (x) { return x.id === fid; })[0];
-      tr.querySelector('.pr').value = f.preset || 'music';
-      tr.querySelector('.md').value = f.mode || 'pitch';
-      tr.querySelector('.pr').onchange = function (e) { run('update_fragment', { fragment: fid, preset: e.target.value }); };
-      tr.querySelector('.md').onchange = function (e) { run('update_fragment', { fragment: fid, mode: e.target.value }); };
-      tr.querySelector('.df').onclick = function () { run('delete_fragment', { fragment: fid }); };
-      tr.querySelector('.op').onclick = function () {
-        if (!src(f.source)) { say('Bron ' + f.source + ' bestaat niet.', 'err'); return; }
-        setActive(f.source);
-        var v = view(f.source); v.sel = { in: f.in, out: f.out };
-        var vd = CW / v.pps; if (f.in < v.viewStart || f.out > v.viewStart + vd) { v.viewStart = f.in - vd * 0.1; clampView(v); }
-        renderFields(); draw();
-      };
+    el.querySelector('.cnl').onclick = function () { cancelJob(b.id, 'Render geannuleerd.'); };
+    var ex = el.querySelector('.errbox .x'); if (ex) ex.onclick = function () { delete blockMsg[b.id]; renderBlocks(); };
+    el.querySelectorAll('.acc').forEach(function (btn) {
+      btn.onclick = function () { acceptOverlap(b, btn.dataset.a, btn.dataset.bb, L); };
     });
+    if (frs.length) wireTimeline(el, b, L);
+    wireFragTable(el, b, L);
+    wireDetail(el, b, L);
     box.appendChild(el);
   });
   box.parentNode.scrollTop = keepScroll;
+  updateBusyUI();
+}
+function laterVoice(L, a, c) {
+  var x = findBy(L.voices.map(function (q) { return { id: q.v.id, start: q.start }; }), 'id', a), y = findBy(L.voices.map(function (q) { return { id: q.v.id, start: q.start }; }), 'id', c);
+  if (!x || !y) return c;
+  return y.start >= x.start ? y.id : x.id;
+}
+function acceptOverlap(b, a, c, L) {
+  var vid = laterVoice(L, a, c);
+  var r = runB(b.id, 'update_voice', { voice: vid, acceptOverlap: true });
+  if (r.ok) say('Overlap van ' + vid + ' geaccepteerd.', 'ok');
+  return r.ok;
+}
+function wireFragTable(el, b, L) {
+  var dragFid = null;
+  el.querySelectorAll('tr[data-f]').forEach(function (tr) {
+    var fid = tr.dataset.f, f = findBy(b.fragments, 'id', fid);
+    tr.querySelector('.pr').value = f.preset || 'music';
+    tr.querySelector('.md').value = f.mode || 'pitch';
+    tr.querySelector('.pr').onchange = function (e) { runB(b.id, 'update_fragment', { fragment: fid, preset: e.target.value }); };
+    tr.querySelector('.md').onchange = function (e) { runB(b.id, 'update_fragment', { fragment: fid, mode: e.target.value }); };
+    tr.querySelector('.df').onclick = function (e) { e.stopPropagation(); deleteFragment(b, fid); };
+    tr.querySelector('.dp').onclick = function (e) { e.stopPropagation(); var r = runB(b.id, 'duplicate_fragment', { fragment: fid }); if (r.ok) say('Fragment gedupliceerd.', 'ok'); };
+    tr.querySelector('.op').onclick = function (e) { e.stopPropagation(); openInWave(f.source, f.in, f.out); };
+    tr.addEventListener('click', function (e) {
+      if (e.target.closest('select,button,.grip')) return;
+      pick = { block: b.id, kind: 'f', id: fid }; renderBlocks();
+    });
+    var grip = tr.querySelector('.grip');
+    grip.addEventListener('dragstart', function (e) {
+      dragFid = fid; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', fid);
+      try { e.dataTransfer.setDragImage(tr, 10, 10); } catch (x) {}
+    });
+    grip.addEventListener('dragend', function () { dragFid = null; el.querySelectorAll('tr.dropb,tr.dropa').forEach(function (r) { r.classList.remove('dropb', 'dropa'); }); });
+    tr.addEventListener('dragover', function (e) {
+      if (!dragFid) return; e.preventDefault();
+      var rc = tr.getBoundingClientRect(), after = e.clientY > rc.top + rc.height / 2;
+      tr.classList.toggle('dropa', after); tr.classList.toggle('dropb', !after);
+    });
+    tr.addEventListener('dragleave', function () { tr.classList.remove('dropa', 'dropb'); });
+    tr.addEventListener('drop', function (e) {
+      if (!dragFid) return; e.preventDefault();
+      var rc = tr.getBoundingClientRect(), after = e.clientY > rc.top + rc.height / 2;
+      var from = b.fragments.indexOf(findBy(b.fragments, 'id', dragFid)), to = b.fragments.indexOf(f) + (after ? 1 : 0);
+      if (from < to) to--;
+      var id = dragFid; dragFid = null;
+      if (from === to) { renderBlocks(); return; }
+      var r = runB(b.id, 'move_fragment', { fragment: id, position: to }); if (r.ok) say('Fragment verplaatst naar positie ' + (to + 1) + '.', 'ok');
+    });
+  });
+  el.querySelectorAll('tr[data-v]').forEach(function (tr) {
+    var vid = tr.dataset.v, v = findBy(b.voice, 'id', vid);
+    tr.querySelector('.vdf').onclick = function (e) { e.stopPropagation(); runB(b.id, 'delete_voice', { voice: vid }); };
+    tr.querySelector('.vop').onclick = function (e) { e.stopPropagation(); openInWave(v.source, v.in, v.out); };
+    tr.addEventListener('click', function () { pick = { block: b.id, kind: 'v', id: vid }; renderBlocks(); });
+  });
+}
+
+/* ---------- renderen: Worker met terugval ---------- */
+var jobs = {}, queue = [], running = null, jobSeq = 0;
+var wk = null, wkSent = {}, wkGotMsg = false, useWorker = (typeof Worker !== 'undefined');
+var renderCache = {};         // sleutel -> {sig, res}
+var fbCache = new Map(), fbStamp = {};
+var audioStamp = {}, stampN = 0;
+var WORKER_TAIL = '(function(){var audio={},cache=new Map();' +
+  'self.onmessage=function(e){var m=e.data;' +
+  'if(m.type==="audio"){audio[m.name]={sampleRate:m.sampleRate,channels:m.channels};cache.clear();}' +
+  'else if(m.type==="render"){try{var res=AudioFit.renderBlockPure(m.recipe,audio,m.blockId,{onProgress:function(f,l){self.postMessage({type:"progress",jobId:m.jobId,fraction:f,label:l});},cache:cache});' +
+  'self.postMessage({type:"done",jobId:m.jobId,sampleRate:res.sampleRate,channels:res.channels,stats:res.stats,warnings:res.warnings},res.channels.map(function(c){return c.buffer;}));}' +
+  'catch(err){self.postMessage({type:"error",jobId:m.jobId,message:String(err&&err.message||err)});}}};})();';
+
+function stampOf(name) {
+  var a = hasAudio(name) ? AF.getAudio(name) : null; if (!a) return 0;
+  var s = audioStamp[name];
+  if (!s || s.ref !== a.channels[0]) s = audioStamp[name] = { ref: a.channels[0], id: ++stampN };
+  return s.id;
+}
+function blockSources(b) {
+  var n = {}; (b.fragments || []).forEach(function (f) { n[f.source] = 1; }); (b.voice || []).forEach(function (v) { n[v.source] = 1; });
+  return Object.keys(n);
+}
+function missingSources(b) { return blockSources(b).filter(function (n) { return !hasAudio(n); }); }
+function checkSources(b) {
+  var m = missingSources(b);
+  if (m.length) { say('Bron(nen) niet geladen: ' + m.join(', '), 'err'); return false; }
+  return true;
+}
+function toBuf(res) {
+  var buf = ctx.createBuffer(res.channels.length, res.channels[0].length, res.sampleRate);
+  for (var i = 0; i < res.channels.length; i++) buf.copyToChannel(res.channels[i], i);
+  return buf;
+}
+function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 20); }); }
+
+// o: {key, ui, ref, purpose, make(), onDone(res), label}
+function startRender(o) {
+  cancelJob(o.key, null, true);
+  var b = o.make(); if (!b) return;
+  var sig = JSON.stringify(b) + '|' + R.sampleRate + '|' + blockSources(b).map(stampOf).join(',');
+  var c = renderCache[o.key];
+  if (c && c.sig === sig) { try { o.onDone(c.res, true); } catch (e) { say(e.message, 'err'); } return; }
+  var job = { key: o.key, id: ++jobSeq, o: o, sig: sig, fraction: 0, label: 'in de wachtrij', state: 'queued', blockJson: blockJson(o.ui) };
+  jobs[o.key] = job; queue.push(job);
+  updateBusyUI(); pump();
+}
+function blockJson(id) { var b = blockById(id); return b ? JSON.stringify(b) + '|' + R.sampleRate : null; }
+function cancelJob(key, why, silent) {
+  var job = jobs[key]; if (!job) return;
+  delete jobs[key];
+  var qi = queue.indexOf(job); if (qi >= 0) queue.splice(qi, 1);
+  if (running === job) {
+    running = null; job.cancelled = true;
+    if (wk) { try { wk.terminate(); } catch (e) {} wk = null; wkSent = {}; }
+  }
+  if (why && !silent) say(why, 'warn');
+  updateBusyUI(); pump();
+}
+function pump() {
+  if (running || !queue.length) return;
+  var job = queue.shift(); running = job; job.state = 'running'; job.label = 'start';
+  var b = job.o.make();
+  if (!b) { running = null; delete jobs[job.key]; updateBusyUI(); pump(); return; }
+  var recipe = clone(R); recipe.blocks = [b];
+  var names = blockSources(b);
+  job.recipe = recipe; job.names = names; job.block = b;
+  updateBusyUI();
+  var canPure = typeof AF.renderBlockPure === 'function';
+  if (useWorker && canPure) runInWorker(job); else runInMain(job);
+}
+function getWorker() {
+  if (wk) return wk;
+  var core = document.getElementById('audiofit-core').textContent;
+  var url = URL.createObjectURL(new Blob([core + '\n;' + WORKER_TAIL], { type: 'text/javascript' }));
+  wk = new Worker(url); wkSent = {}; wkGotMsg = false;
+  setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 5000);
+  var me = wk;
+  wk.onmessage = function (e) { if (me === wk) { wkGotMsg = true; onWorkerMsg(e.data); } };
+  wk.onerror = function (e) {
+    if (me !== wk) return;
+    try { e.preventDefault(); } catch (x) {}
+    var job = running; wk = null; wkSent = {};
+    if (!job) return;
+    if (!wkGotMsg) { useWorker = false; say('Worker niet beschikbaar (' + (e && e.message ? e.message : 'fout') + '); rekenwerk gebeurt in de hoofdthread.', 'warn'); runInMain(job); }
+    else failJob(job, 'Worker-fout: ' + (e && e.message ? e.message : 'onbekend'));
+  };
+  return wk;
+}
+function runInWorker(job) {
+  var w;
+  try { w = getWorker(); } catch (e) { useWorker = false; say('Worker niet beschikbaar; rekenwerk gebeurt in de hoofdthread.', 'warn'); runInMain(job); return; }
+  job.names.forEach(function (n) {
+    var st = stampOf(n); if (wkSent[n] === st) return;
+    var a = AF.getAudio(n), chans = a.channels.map(function (c) { return c.slice(); });
+    w.postMessage({ type: 'audio', name: n, sampleRate: a.sampleRate, channels: chans }, chans.map(function (c) { return c.buffer; }));
+    wkSent[n] = st;
+  });
+  w.postMessage({ type: 'render', jobId: job.id, recipe: job.recipe, blockId: job.block.id });
+}
+function onWorkerMsg(m) {
+  var job = running; if (!job || m.jobId !== job.id) return;
+  if (m.type === 'progress') { job.fraction = m.fraction; job.label = m.label || ''; updateBusyUI(); }
+  else if (m.type === 'done') finishJob(job, { sampleRate: m.sampleRate, channels: m.channels, stats: m.stats, warnings: m.warnings });
+  else if (m.type === 'error') failJob(job, m.message);
+}
+async function runInMain(job) {
+  try {
+    await pause(30);
+    if (job.cancelled) return;
+    var res;
+    if (typeof AF.renderBlockPure === 'function') {
+      var audio = {};
+      job.names.forEach(function (n) { audio[n] = AF.getAudio(n); if (fbStamp[n] !== stampOf(n)) { fbCache.clear(); fbStamp[n] = stampOf(n); } });
+      res = await AF.renderBlockPure(job.recipe, audio, job.block.id, { onProgress: function (f, l) { job.fraction = f; job.label = l || ''; updateBusyUI(); }, cache: fbCache });
+    } else {
+      // oudere kern (0.1.x): geen pure API; synchrone render via het commando
+      if (job.o.synthetic) throw new Error('gefit voorbeluisteren van een los fragment vraagt kern 0.2.0 of nieuwer');
+      job.label = 'renderen'; updateBusyUI(); await pause(20);
+      var r = AF.exec({ cmd: 'render_block', args: { block: job.block.id } });
+      if (!r.ok) throw new Error(r.error);
+      var rb = AF.getRendered(job.block.id);
+      res = { sampleRate: rb.sampleRate, channels: rb.channels, stats: { duration: r.result.duration, samples: r.result.samples, peakDb: r.result.peakDb, clipped: r.result.clipped }, warnings: r.result.warnings || [] };
+    }
+    if (job.cancelled) return;
+    finishJob(job, res);
+  } catch (e) { if (!job.cancelled) failJob(job, e && e.message ? e.message : String(e)); }
+}
+function finishJob(job, res) {
+  if (running === job) running = null;
+  delete jobs[job.key];
+  renderCache[job.key] = { sig: job.sig, res: res };
+  updateBusyUI();
+  try { job.o.onDone(res, false); } catch (e) { say('Fout na renderen: ' + (e && e.message ? e.message : e), 'err'); }
+  pump();
+}
+async function failJob(job, message) {
+  if (running === job) running = null;
+  delete jobs[job.key];
+  updateBusyUI();
+  if (/acceptOverlap/i.test(message) && !job.o.overlapAsked) {
+    var bi = fitInfo.blocks[job.o.ui], b = blockById(job.o.ui);
+    var ch = await askModal('Overlap accepteren en doorgaan?', message, ['Accepteren', 'Annuleren']);
+    if (ch === 0 && b) {
+      var L = layoutOf(b), n = 0;
+      ((bi && bi.overlaps) || []).filter(function (o) { return !o.accepted; }).forEach(function (o) { if (acceptOverlap(b, o.a, o.b, L)) n++; });
+      if (!n) { var un = (b.voice || []); /* terugval: alles accepteren */ un.forEach(function (v) { run('update_voice', { voice: v.id, acceptOverlap: true }); }); }
+      job.o.overlapAsked = true;
+      say('Overlap geaccepteerd; opnieuw proberen.', 'ok');
+      startRender(job.o);
+      pump(); return;
+    }
+    say('Niet gerenderd: overlap niet geaccepteerd.', 'warn');
+  } else {
+    say('Renderen mislukt: ' + message, 'err');
+    if (job.o.ui && blockById(job.o.ui)) { blockMsg[job.o.ui] = message; renderBlocks(); }
+  }
+  pump();
+}
+
+/* voortgang in UI */
+var spEl = $('sprog');
+function updateBusyUI() {
+  // knoppen
+  document.querySelectorAll('[data-key][data-ref]').forEach(function (el) {
+    var job = jobs[el.dataset.key], busy = !!job && job.o.ref === el.dataset.ref;
+    el.disabled = busy; el.classList.toggle('busy', busy);
+    el.innerHTML = busy ? '&#8987; ' + Math.round(job.fraction * 100) + '%' : el.dataset.base;
+  });
+  // per blok
+  document.querySelectorAll('.rprog').forEach(function (p) {
+    var job = null;
+    for (var k in jobs) if (jobs[k].o.ui === p.dataset.b) job = jobs[k];
+    if (!job) { p.style.display = 'none'; return; }
+    var b = blockById(p.dataset.b);
+    p.style.display = 'flex';
+    p.querySelector('.bar i').style.width = (job.fraction * 100) + '%';
+    p.querySelector('.pct').textContent = Math.round(job.fraction * 100) + '%';
+    p.querySelector('.lab').textContent = (b ? b.name + ' · ' : '') + job.label;
+  });
+  // statusbalk
+  var cur = running || queue[0];
+  if (!cur) { spEl.style.display = 'none'; return; }
+  var b2 = blockById(cur.o.ui), extra = queue.length + (running ? 0 : -1);
+  spEl.style.display = 'flex';
+  spEl.querySelector('.bar i').style.width = (cur.fraction * 100) + '%';
+  spEl.querySelector('.pct').textContent = Math.round(cur.fraction * 100) + '%';
+  spEl.querySelector('.lab').textContent = (b2 ? b2.name + ' · ' : '') + cur.label + (extra > 0 ? ' (+' + extra + ' in wachtrij)' : '');
+}
+
+/* ---------- voorbeluisteren en export ---------- */
+function mkBlockJob(b, ref, purpose, onDone) {
+  return { key: b.id, ui: b.id, ref: ref, purpose: purpose, make: function () { return blockById(b.id); }, onDone: onDone };
 }
 async function previewBlock(b) {
   await ensureCtx();
   if (play && play.kind === 'block' && play.block === b.id) { stopPlay(); return; }
-  var missing = (b.fragments || []).filter(function (f) { return !hasAudio(f.source); });
-  if (missing.length) { say('Bron(nen) niet geladen: ' + missing.map(function (f) { return f.source; }).join(', '), 'err'); return; }
-  say('Blok "' + b.name + '" renderen...');
-  await new Promise(function (r) { setTimeout(r, 20); });
-  var r = run('render_block', { block: b.id });
-  if (!r.ok) return;
-  var res = r.result || {};
-  var rb = AF.getRendered(b.id);
-  if (!rb) { say('Geen gerenderde audio beschikbaar voor ' + b.name + '.', 'err'); return; }
-  var buf = ctx.createBuffer(rb.channels.length, rb.channels[0].length, rb.sampleRate);
-  for (var i = 0; i < rb.channels.length; i++) buf.copyToChannel(rb.channels[i], i);
-  var msg = 'Blok "' + b.name + '": ' + (res.duration != null ? res.duration.toFixed(3) + ' s' : '') + (res.peakDb != null ? ', piek ' + Number(res.peakDb).toFixed(1) + ' dBFS' : '');
-  say(msg + (res.clipped ? ' - CLIPPING (begrensd op 0 dBFS)' : ''), res.clipped ? 'warn' : 'ok');
-  startBuf(buf, 0, buf.duration, false, 'block', { block: b.id });
+  playBlockRange(b, 0, null, 'pv');
+}
+async function playBlockRange(b, from, to, ref) {
+  await ensureCtx();
+  if (!checkSources(b)) return;
+  stopPlay();
+  startRender(mkBlockJob(b, ref, 'preview', function (res, cached) {
+    var buf = toBuf(res), st = res.stats || {};
+    var a = clamp(from || 0, 0, buf.duration), e = to == null ? buf.duration : clamp(to, a + 0.01, buf.duration);
+    say('Blok "' + b.name + '": ' + (st.duration != null ? st.duration.toFixed(3) + ' s' : buf.duration.toFixed(3) + ' s') + (st.peakDb != null ? ', piek ' + Number(st.peakDb).toFixed(1) + ' dBFS' : '') +
+      (st.clipped ? ' - CLIPPING (begrensd op 0 dBFS)' : '') + (cached ? ' (uit cache)' : ''), st.clipped ? 'warn' : 'ok');
+    (res.warnings || []).forEach(function (w) { say(w, 'warn'); });
+    startBuf(buf, a, e, false, 'block', { block: b.id });
+  }));
+}
+async function playOriginal(source, a, b) {
+  await ensureCtx();
+  if (!hasAudio(source)) { say('Audio van ' + source + ' is niet geladen.', 'err'); return; }
+  startBuf(srcBuffer(source), a, b, false, 'frag', {});
+}
+async function playFitted(b, x) {
+  await ensureCtx();
+  if (!checkSources(b)) return;
+  stopPlay();
+  var f = x.f;
+  var o = {
+    key: b.id + '#ab', ui: b.id, ref: 'ab' + f.id, purpose: 'preview', synthetic: true,
+    make: function () {
+      var cb = blockById(b.id), cf = cb && findBy(cb.fragments, 'id', f.id); if (!cf) return null;
+      var fe = findBy((fitInfo.blocks[b.id] || {}).fragments, 'id', f.id);
+      var fc = clone(cf); fc.locked = false; fc.manualDuration = null;
+      var d = fe && fe.targetDuration != null ? fe.targetDuration : (cf.out - cf.in);
+      return { id: 'ab', name: b.name + ' · fragment ' + (x.i + 1), targetDuration: d, fitMode: 'proportional', fragments: [fc], transitions: [], voice: [], duckDb: 0, duckMs: 150 };
+    },
+    onDone: function (res) { var buf = toBuf(res); say('Fragment ' + (x.i + 1) + ' gefit: ' + buf.duration.toFixed(3) + ' s.', 'ok'); startBuf(buf, 0, buf.duration, false, 'frag', {}); }
+  };
+  if (typeof AF.renderBlockPure !== 'function') {
+    // oude kern: knip het fragment uit de blokrender
+    playBlockRange(b, x.start, x.end, 'ab' + f.id); return;
+  }
+  startRender(o);
+}
+function downloadBytes(name, bytes) {
+  var url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+  var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
 }
 function exportBlock(b) {
-  var missing = (b.fragments || []).filter(function (f) { return !hasAudio(f.source); });
-  if (missing.length) { say('Bron(nen) niet geladen: ' + missing.map(function (f) { return f.source; }).join(', '), 'err'); return; }
-  var r = run('export_block', { block: b.id });
-  if (!r.ok) return;
-  var files = (r.result && r.result.files) || [];
-  if (!files.length) { say('Export gaf geen bestanden.', 'err'); return; }
-  files.forEach(function (f, i) {
-    var url = URL.createObjectURL(new Blob([f.bytes], { type: 'audio/wav' }));
-    setTimeout(function () {
-      var a = document.createElement('a'); a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-    }, i * 300);
+  if (!checkSources(b)) return;
+  var bi = fitInfo.blocks[b.id];
+  if (bi && bi.exportable === false) { say('Export geblokkeerd voor ' + b.name + ': ' + ((bi.error || (bi.warnings || []).join('; ')) || 'het blok klopt niet'), 'err'); return; }
+  startRender(mkBlockJob(b, 'wav', 'export', function (res) {
+    var name = (b.name + '_' + Number(b.targetDuration).toFixed(3) + 's.wav').replace(/[\\\/:*?"<>|]/g, '_');
+    var bytes = AF.wav.encode(res.channels, res.sampleRate), st = res.stats || {};
+    downloadBytes(name, bytes);
+    window.__lastExport = { name: name, bytes: bytes.length, samples: res.channels[0].length };
+    say('Geexporteerd: ' + name + (st.peakDb != null ? ' (piek ' + Number(st.peakDb).toFixed(1) + ' dBFS' + (st.clipped ? ', CLIPPING begrensd' : '') + ')' : ''), st.clipped ? 'warn' : 'ok');
+  }));
+}
+
+/* ---------- dialoog ---------- */
+function askModal(title, text, labels) {
+  return new Promise(function (resolve) {
+    var m = $('modal'), btns = m.querySelector('.btns');
+    m.querySelector('h3').textContent = title; m.querySelector('p').textContent = text; btns.innerHTML = '';
+    function done(i) { m.style.display = 'none'; document.removeEventListener('keydown', onKey, true); resolve(i); }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); done(labels.length - 1); } }
+    labels.forEach(function (l, i) { var bt = document.createElement('button'); bt.textContent = l; if (!i) bt.className = 'on'; bt.onclick = function () { done(i); }; btns.appendChild(bt); });
+    m.style.display = 'flex'; document.addEventListener('keydown', onKey, true); btns.firstChild.focus();
   });
-  say('Geexporteerd: ' + files.map(function (f) { return f.name; }).join(', '), 'ok');
 }
 
 /* ---------- bronnenlijst ---------- */
@@ -2616,14 +3578,22 @@ function onState(rec) {
   if (!activeSrc || !src(activeSrc)) activeSrc = R.sources.length ? R.sources[0].name : null;
   if (activeBlock && !blockById(activeBlock)) activeBlock = null;
   if (!activeBlock && R.blocks.length) activeBlock = R.blocks[R.blocks.length - 1].id;
-  renderSources(); renderMarkers(); renderBlocks(); renderFields(); fitIfNeeded(); draw();
+  for (var k in jobs) { if (blockJson(jobs[k].o.ui) !== jobs[k].blockJson) cancelJob(k, 'Render geannuleerd: het blok is gewijzigd.'); }
+  renderSources(); renderMarkers(); renderBlocks(); renderVoiceCtl(); renderFields(); fitIfNeeded(); draw(); updateHistory();
   setTimeout(refreshFit, 0);
+}
+function updateHistory() {
+  var h = null; try { h = AF.history ? AF.history() : null; } catch (e) {}
+  var u = $('btnUndo'), r = $('btnRedo');
+  u.disabled = h ? !(h.undo > 0) : false; r.disabled = h ? !(h.redo > 0) : false;
+  u.title = 'Ongedaan maken (Ctrl+Z)' + (h ? ' \u00b7 ' + h.undo + ' stap(pen)' : '');
+  r.title = 'Opnieuw (Ctrl+Y)' + (h ? ' \u00b7 ' + h.redo + ' stap(pen)' : '');
 }
 AF.subscribe(onState);
 
 /* ---------- knoppen en toetsen ---------- */
-function doUndo() { var r = run('undo'); if (r.ok) say('Ongedaan gemaakt.'); }
-function doRedo() { var r = run('redo'); if (r.ok) say('Opnieuw uitgevoerd.'); }
+function doUndo() { var r = run('undo'); if (r.ok) say('Ongedaan gemaakt.'); updateHistory(); }
+function doRedo() { var r = run('redo'); if (r.ok) say('Opnieuw uitgevoerd.'); updateHistory(); }
 $('btnUndo').onclick = doUndo; $('btnRedo').onclick = doRedo;
 
 document.addEventListener('keydown', function (e) {
@@ -2648,7 +3618,7 @@ document.addEventListener('keydown', function (e) {
       v.sel = { in: v.sel ? Math.min(v.sel.in, to) : to, out: to }; renderFields(); draw(); break;
     case 'm': case 'M': if (v) { e.preventDefault(); addMarkerAt(cursorNow()); } break;
     case 'l': case 'L': $('chkLoop').checked = !$('chkLoop').checked; $('chkLoop').onchange(); break;
-    case 'Enter': e.preventDefault(); addSelectionToBlock(); break;
+    case 'Enter': e.preventDefault(); if (e.shiftKey) addSelectionAsVoice(); else addSelectionToBlock(); break;
   }
 });
 
@@ -2656,7 +3626,8 @@ document.addEventListener('keydown', function (e) {
 refreshState();
 resize();
 updatePlayBtn();
-window.__editor = { get state() { return R; }, say: say };
+updateHistory();
+window.__editor = { get state() { return R; }, say: say, get workerActive() { return !!wk; }, get useWorker() { return useWorker; }, get fit() { return fitInfo; } };
 })();
 </script>
 </body>
